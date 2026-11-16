@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { apiUrl } from '@/services/api'
 import { Wordmark } from './Wordmark'
 
 export function Footer() {
@@ -9,7 +10,7 @@ export function Footer() {
           <Wordmark />
           <p className="mt-2 max-w-[40ch] text-sm text-muted">
             Community reports of accessibility barriers in Midtown and Lower Manhattan, checked, scored and routed
-            around. Open source, runs on local hardware.
+            around. Open source, runs on local hardware or free hosting.
           </p>
         </div>
         <nav aria-label="Footer" className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm md:col-span-4 md:col-start-7">
@@ -17,10 +18,11 @@ export function Footer() {
           <Link to="/accessibility">Accessibility statement</Link>
           <Link to="/privacy">Privacy policy</Link>
           <Link to="/terms">Terms of service</Link>
-          <a href="/api/docs" target="_blank" rel="noreferrer">
+          <a href={apiUrl('/api/docs')} target="_blank" rel="noreferrer">
             API documentation
           </a>
           <Link to="/report">Report a barrier</Link>
+          <Link to="/settings">AI settings</Link>
         </nav>
         <p className="text-xs text-muted md:col-span-3 md:text-right">
           Map data ©{' '}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDataSource } from '@/stores/dataSource'
 
 export interface AsyncState<T> {
   data: T | undefined
@@ -8,12 +9,14 @@ export interface AsyncState<T> {
   setData: (d: T) => void
 }
 
-/** Runs `fn` when deps change; ignores stale responses. */
+/** Runs `fn` when deps change; ignores stale responses. Also reruns when a sleeping
+ *  demo server wakes up (dataSource epoch), so pages swap local data for live data. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
   const [data, setData] = useState<T>()
   const [error, setError] = useState<Error>()
   const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
+  const epoch = useDataSource((s) => s.epoch)
   const seq = useRef(0)
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
         if (id === seq.current) setLoading(false)
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick])
+  }, [...deps, tick, epoch])
 
   const reload = useCallback(() => setTick((t) => t + 1), [])
   return { data, error, loading, reload, setData }

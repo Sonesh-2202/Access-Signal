@@ -1,4 +1,5 @@
-import { isDemo, markDemo, markLive, useDataSource } from '@/stores/dataSource'
+import { aiKeyHeaders } from '@/stores/aiKey'
+import { beginWaking, configureWake, isDemo, markDemo, markLive, useDataSource, whenAwake } from '@/stores/dataSource'
 import { readRefreshToken, useAuth } from '@/stores/auth'
 import * as local from './mockApi'
 import type {
@@ -19,9 +20,50 @@ import type {
   Taxonomy,
   TokenPair,
   User,
+  AIStatus,
 } from '@/types'
 
-const BASE = import.meta.env.VITE_API_BASE ?? ''
+/** API origin. Empty means same origin (/api through the Vite or nginx proxy). */
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')
+const BASE = API_BASE
+
+/** Absolute URL for an API path such as an evidence file, for <img src> and links. */
+export function apiUrl(path: string): string
+export function apiUrl(path: string | null | undefined): string | undefined
+export function apiUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined
+  return path.startsWith('/api/') ? `${BASE}${path}` : path
+}
+
+/**
+ * A separately hosted API (VITE_API_BASE set) is assumed to be on a free tier that
+ * sleeps when idle. Then an outage first means "waking up": show the banner, ping
+ * /api/health with backoff, and hold write requests until it answers.
+ */
+let coldStart = BASE !== ''
+/** Test hook. */
+export function setColdStart(on: boolean) {
+  coldStart = on
+}
+/** A request still unanswered after this long, before the API has answered once, means the host is starting. */
+const SLOW_MS = 4000
+
+configureWake(async () => {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 12_000)
+  try {
+    const res = await fetch(`${BASE}/api/health`, { signal: ctrl.signal, cache: 'no-store' })
+    return res.ok && (res.headers.get('content-type') ?? '').includes('json')
+  } catch {
+    return false
+  } finally {
+    clearTimeout(t)
+  }
+})
+
+function asleepError() {
+  return new ApiError(503, 'The demo server is still asleep. Wait a minute and try again.', false)
+}
 
 export interface Resolution {
   overall_median_hours: number | null
@@ -46,6 +88,8 @@ export class ApiError extends Error {
 
 /** A hung connection counts as an outage after this long. Fast failures fall back at once. */
 const LIVE_TIMEOUT_MS = 8000
+/** Hosted demo: show local data sooner while the sleeping server starts. */
+const COLD_TIMEOUT_MS = 4000
 
 function isOutage(e: unknown): boolean {
   if (e instanceof ApiError) return e.status >= 500 || (!e.fromApi && e.status >= 400 && e.status !== 401 && e.status !== 403)
@@ -98,14 +142,19 @@ async function runLive<T>(live: () => Promise<T>, fromLocal: () => T, label: str
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(Object.assign(new Error('Request timed out'), { name: 'TimeoutError' })), LIVE_TIMEOUT_MS)
+      timer = setTimeout(
+        () => reject(Object.assign(new Error('Request timed out'), { name: 'TimeoutError' })),
+        coldStart && useDataSource.getState().mode !== 'live' ? COLD_TIMEOUT_MS : LIVE_TIMEOUT_MS,
+      )
     })
     const value = await Promise.race([live(), timeout])
     markLive()
     return value
   } catch (e) {
     if ((e as Error)?.name === 'AbortError' || !isOutage(e)) throw e
-    markDemo(`${label}: ${(e as Error).message || 'unreachable'}`)
+    const reason = `${label}: ${(e as Error).message || 'unreachable'}`
+    if (coldStart) void beginWaking(reason)
+    else markDemo(reason)
     return fromLocal()
   } finally {
     clearTimeout(timer)
@@ -168,21 +217,49 @@ export async function refreshSession(): Promise<boolean> {
   return refreshing
 }
 
-async function request<T>(method: string, path: string, opts: { body?: unknown; query?: Query; form?: FormData; signal?: AbortSignal } = {}, retry = true): Promise<T> {
+/** Only these endpoints can call a model, so only they ever see a personal AI key. */
+const AI_PATHS = [/^\/api\/reports\/classify$/, /^\/api\/agents\/[a-z_]+\/run$/]
+
+type RequestOpts = { body?: unknown; query?: Query; form?: FormData; signal?: AbortSignal }
+
+async function request<T>(method: string, path: string, opts: RequestOpts = {}, retry = true, wakeRetry = true): Promise<T> {
+  if (coldStart && useDataSource.getState().mode === 'waking' && !(await whenAwake())) throw asleepError()
   const headers: Record<string, string> = {}
   const token = useAuth.getState().accessToken
   if (token) headers.Authorization = `Bearer ${token}`
+  if (AI_PATHS.some((re) => re.test(path))) Object.assign(headers, aiKeyHeaders())
   let body: BodyInit | undefined
   if (opts.form) body = opts.form
   else if (opts.body !== undefined) {
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(opts.body)
   }
-  const res = await fetch(`${BASE}${path}${qs(opts.query)}`, { method, headers, body, signal: opts.signal })
+  // Before the API has answered once, a slow reply means the free host is starting:
+  // show the banner (and start pinging) while this request keeps waiting.
+  const slow = coldStart && useDataSource.getState().mode !== 'live' ? setTimeout(() => void beginWaking('slow first response'), SLOW_MS) : undefined
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}${qs(opts.query)}`, { method, headers, body, signal: opts.signal })
+  } catch (e) {
+    // No response at all, so the request never reached the app: safe to send again once awake.
+    if (coldStart && wakeRetry && e instanceof TypeError) {
+      if (await beginWaking('network error')) return request<T>(method, path, opts, retry, false)
+      throw asleepError()
+    }
+    throw e
+  } finally {
+    clearTimeout(slow)
+  }
+  // A gateway error page (not JSON from the app) while the host spins up: same as above.
+  if (coldStart && wakeRetry && [502, 503, 504].includes(res.status) && !(res.headers.get('content-type') ?? '').includes('json')) {
+    if (await beginWaking(`HTTP ${res.status} from host`)) return request<T>(method, path, opts, retry, false)
+    throw asleepError()
+  }
   if (res.status === 401 && retry && readRefreshToken()) {
-    if (await refreshSession()) return request<T>(method, path, opts, false)
+    if (await refreshSession()) return request<T>(method, path, opts, false, wakeRetry)
   }
   if (!res.ok) throw await parseError(res)
+  markLive()
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
@@ -197,8 +274,7 @@ export const api = {
 
   // meta
   taxonomy: () => withFallback(() => request<Taxonomy>('GET', '/api/meta/taxonomy'), local.taxonomy, 'taxonomy'),
-  aiStatus: () =>
-    withFallback(() => request<{ available: boolean; model: string | null; fallback_enabled: boolean }>('GET', '/api/meta/ai-status'), local.aiStatus, 'ai-status'),
+  aiStatus: () => withFallback(() => request<AIStatus>('GET', '/api/meta/ai-status'), local.aiStatus, 'ai-status'),
 
   // evidence
   uploadEvidence: (file: Blob, filename: string, extra: { transcription?: string; alt_text?: string } = {}) => {

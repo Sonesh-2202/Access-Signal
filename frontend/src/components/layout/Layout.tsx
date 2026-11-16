@@ -4,6 +4,7 @@ import { onAnnounce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
 import { Footer } from './Footer'
 import { Header } from './Header'
+import { WakeBanner } from './WakeBanner'
 
 export function SkipLink() {
   return (
@@ -53,6 +54,7 @@ export function Layout({ fullBleed }: { fullBleed?: boolean }) {
     <div className="flex min-h-screen flex-col">
       <SkipLink />
       <Header />
+      <WakeBanner />
       <main id="main" ref={main} tabIndex={-1} className={cx('flex-1 focus:outline-none', fullBleed && 'flex flex-col')}>
         <Outlet />
       </main>

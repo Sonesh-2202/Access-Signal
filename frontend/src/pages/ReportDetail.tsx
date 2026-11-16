@@ -14,9 +14,10 @@ import { MapView } from '@/components/map/MapView'
 import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { catLabel, subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
-import { api } from '@/services/api'
+import { api, apiUrl } from '@/services/api'
 import { isStaff, useAuth } from '@/stores/auth'
 import type { Evidence, ReportDetail } from '@/types'
+import { aiSourceShort } from '@/utils/aiSource'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
 import { dateTime, ISSUE_STATUS_LABEL, timeAgo } from '@/utils/format'
@@ -89,7 +90,7 @@ export default function ReportDetailPage() {
 
           {r.ai_analysis && (
             <section className="mt-4 border-t border-hair pt-2" aria-labelledby="ai-h">
-              <h2 id="ai-h" className="meta">{r.ai_analysis.source === 'lmstudio' ? 'Local AI reading' : 'Keyword classifier reading'}</h2>
+              <h2 id="ai-h" className="meta">{aiSourceShort(r.ai_analysis.source)} reading{r.ai_analysis.model ? `, {r.ai_analysis.model}` : ''}</h2>
               <p className="mt-1">{r.ai_analysis.summary}</p>
               <p className="mt-0.5 text-sm text-muted">
                 Suggested {subLabel(t, r.ai_analysis.category, r.ai_analysis.subcategory).toLowerCase()}
@@ -201,7 +202,7 @@ function EvidenceSection({ evidence }: { evidence: Evidence[] }) {
           {photos.map((p, i) => (
             <li key={p.id}>
               <button type="button" onClick={() => setOpen(p)} className="block w-full border border-hair" aria-label={`Open photo ${i + 1} full size`}>
-                <img src={p.url!} alt={(p.meta.alt_text as string) || `Evidence photo ${i + 1}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                <img src={apiUrl(p.url)} alt={(p.meta.alt_text as string) || `Evidence photo ${i + 1}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
               </button>
               {(p.meta.role as string) === 'resolution' && <p className="mt-0.5 text-xs text-muted">Photo of the fix</p>}
             </li>
@@ -210,12 +211,12 @@ function EvidenceSection({ evidence }: { evidence: Evidence[] }) {
       )}
       {voices.map((v) => (
         <figure key={v.id} className="mt-2 border-l-2 border-hair pl-2">
-          {v.url ? <audio controls src={v.url} className="h-5 max-w-full" aria-label="Voice note" /> : <p className="meta">Voice note transcript</p>}
+          {v.url ? <audio controls src={apiUrl(v.url)} className="h-5 max-w-full" aria-label="Voice note" /> : <p className="meta">Voice note transcript</p>}
           {v.transcription && <figcaption className="mt-0.5 text-sm italic">“{v.transcription}”</figcaption>}
         </figure>
       ))}
       <Dialog open={!!open} onClose={() => setOpen(null)} title="Evidence photo" className="sm:max-w-[920px]">
-        {open?.url && <img src={open.url} alt={(open.meta.alt_text as string) || 'Evidence photo'} className="max-h-[70vh] w-full object-contain" />}
+        {open?.url && <img src={apiUrl(open.url)} alt={(open.meta.alt_text as string) || 'Evidence photo'} className="max-h-[70vh] w-full object-contain" />}
         {open && <p className="mt-1 text-sm text-muted">Uploaded {dateTime(open.created_at)}</p>}
       </Dialog>
     </section>

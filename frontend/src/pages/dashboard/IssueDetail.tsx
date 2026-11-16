@@ -10,8 +10,9 @@ import { Container, ErrorNote } from '@/components/layout/Layout'
 import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
-import { api } from '@/services/api'
+import { api, apiUrl } from '@/services/api'
 import type { Evidence, IssueDetail } from '@/types'
+import { aiSourceShort } from '@/utils/aiSource'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
 import { dateTime, ISSUE_STATUS_LABEL, timeAgo } from '@/utils/format'
@@ -65,7 +66,7 @@ export default function IssueDetailPage() {
             {r.description && <p className="mt-2 max-w-prose text-lg leading-relaxed">{r.description}</p>}
             {r.ai_analysis && (
               <p className="mt-1 text-sm text-muted">
-                {r.ai_analysis.source === 'lmstudio' ? 'Local AI' : 'Keyword classifier'}: {r.ai_analysis.summary}
+                {aiSourceShort(r.ai_analysis.source)}: {r.ai_analysis.summary}
               </p>
             )}
           </section>
@@ -122,8 +123,8 @@ function EvidenceGrid({ evidence }: { evidence: Evidence[] }) {
       <ul className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3">
         {photos.map((p, i) => (
           <li key={p.id}>
-            <a href={p.url!} target="_blank" rel="noreferrer" className="block border border-hair">
-              <img src={p.url!} alt={(p.meta.alt_text as string) || `Evidence photo ${i + 1}`} className="aspect-[4/3] w-full object-cover" loading="lazy" />
+            <a href={apiUrl(p.url)} target="_blank" rel="noreferrer" className="block border border-hair">
+              <img src={apiUrl(p.url)} alt={(p.meta.alt_text as string) || `Evidence photo ${i + 1}`} className="aspect-[4/3] w-full object-cover" loading="lazy" />
             </a>
             {(p.meta.role as string) === 'resolution' && <p className="text-xs text-muted">Resolution photo</p>}
           </li>
@@ -131,7 +132,7 @@ function EvidenceGrid({ evidence }: { evidence: Evidence[] }) {
       </ul>
       {voice.map((v) => (
         <div key={v.id} className="mt-1 border-l-2 border-hair pl-2">
-          {v.url && <audio controls src={v.url} className="h-5" aria-label="Voice note" />}
+          {v.url && <audio controls src={apiUrl(v.url)} className="h-5" aria-label="Voice note" />}
           {v.transcription && <p className="text-sm italic">“{v.transcription}”</p>}
         </div>
       ))}

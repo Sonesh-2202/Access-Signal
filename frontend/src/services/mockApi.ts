@@ -20,7 +20,7 @@ import {
   subInfo,
   type MockReport,
 } from '@/data/mockManhattanData'
-import type { Evidence, PlaceDetail, PlaceFeature, Profile, ReportDetail, ReportPage, ReportSummary, RouteResponse, TimelineEntry } from '@/types'
+import type { AIStatus, Evidence, PlaceDetail, PlaceFeature, Profile, ReportDetail, ReportPage, ReportSummary, RouteResponse, TimelineEntry } from '@/types'
 
 type Query = Record<string, string | number | boolean | string[] | undefined | null>
 
@@ -268,7 +268,13 @@ export const categories = () => CATEGORY_STATS
 export const resolution = () => RESOLUTION
 export const hotspots = () => HOTSPOTS
 export const taxonomy = () => TAXONOMY
-export const aiStatus = () => ({ available: true, model: 'gemma-3-4b-it (local)', fallback_enabled: true })
+export const aiStatus = (): AIStatus => ({
+  available: true,
+  provider: 'lmstudio',
+  label: 'LM Studio',
+  model: 'gemma-3-4b-it (local)',
+  fallback_enabled: true,
+})
 
 export function heat(): GeoJSON.FeatureCollection {
   return {

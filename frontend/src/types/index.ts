@@ -43,8 +43,36 @@ export interface Classification {
   summary: string
   detected_features: string[]
   confidence: number
-  source: 'lmstudio' | 'heuristic'
+  /** Which tier produced the result. Always shown next to the reading. */
+  source: AISource
   model: string | null
+  images_reviewed?: boolean
+  /** Why a higher tier didn't answer, e.g. "Gemini quota or rate limit reached". */
+  fallback_reason?: string | null
+}
+
+export type AISource = 'lmstudio' | 'ollama' | 'gemini' | 'groq' | 'nebius' | 'heuristic'
+export type CloudProvider = 'gemini' | 'groq' | 'nebius'
+
+export interface AITier {
+  provider: AISource
+  label: string
+  available: boolean
+  model: string | null
+  base_url: string | null
+  vision: boolean
+}
+
+export interface AIStatus {
+  available: boolean
+  provider?: AISource
+  label?: string
+  model: string | null
+  vision?: boolean
+  fallback_enabled: boolean
+  mode?: 'lmstudio' | 'ollama' | 'cloud' | 'none'
+  tiers?: AITier[]
+  byok?: { enabled: boolean; providers: CloudProvider[] }
 }
 
 export interface Evidence {

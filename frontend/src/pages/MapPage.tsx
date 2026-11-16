@@ -24,6 +24,7 @@ import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useDebounced, useDocumentTitle, useMediaQuery } from '@/hooks/useAsync'
 import { useTaxonomy } from '@/hooks/useTaxonomy'
 import { api } from '@/services/api'
+import { useDataSource } from '@/stores/dataSource'
 import type { ReportSummary } from '@/types'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
@@ -70,6 +71,7 @@ function popupNode(title: string, lines: string[], href: string, linkText: strin
 export default function MapPage() {
   useDocumentTitle('Map')
   const t = useTaxonomy()
+  const epoch = useDataSource((s) => s.epoch)
   const [params] = useSearchParams()
   const desktop = useMediaQuery('(min-width: 1024px)')
   const mapRef = useRef<MLMap | null>(null)
@@ -100,7 +102,7 @@ export default function MapPage() {
       .catch(() => undefined)
       .finally(() => setListLoading(false))
     return () => ctrl.abort()
-  }, [dBbox, cats, showResolved, mode])
+  }, [dBbox, cats, showResolved, mode, epoch])
 
   // ------------------------------------------------------------ map data
   const loadReports = useCallback(async () => {
@@ -108,7 +110,8 @@ export default function MapPage() {
     if (!map) return
     const fc = await api.reportsGeoJSON({ category: cats, include_resolved: showResolved })
     setData(map, 'reports', fc)
-  }, [cats, showResolved])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- epoch: refetch after the demo server wakes
+  }, [cats, showResolved, epoch])
 
   useEffect(() => {
     if (ready) loadReports().catch(() => undefined)

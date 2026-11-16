@@ -8,6 +8,8 @@ import { Container, ErrorNote, PageHeader } from '@/components/layout/Layout'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
 import { api } from '@/services/api'
+import type { AISource } from '@/types'
+import { aiSourceShort } from '@/utils/aiSource'
 
 const DESCRIPTIONS: Record<string, string> = {
   intake: 'Checks a new report for missing evidence and nearby duplicates, then suggests a priority. Moves well-supported reports to review.',
@@ -120,7 +122,7 @@ function ResultView({ name, data }: { name: string; data: Result }) {
       case 'intake':
         return `Completeness ${Math.round(Number(data.completeness) * 100)}%. Missing: ${(data.missing as string[]).join(', ') || 'nothing'}. Suggested priority ${data.suggested_priority}. ${(data.duplicate_candidates as unknown[]).length} possible duplicate(s).`
       case 'evidence_analysis':
-        return `${data.model_source === 'lmstudio' ? 'Local AI' : 'Keyword classifier'} ${data.agrees ? 'agrees with' : 'disagrees with'} the reporter. ${data.model_summary}`
+        return `${aiSourceShort(data.model_source as AISource)} ${data.agrees ? 'agrees with' : 'disagrees with'} the reporter. ${data.model_summary}`
       case 'duplicate_investigation':
         return `Scanned ${data.scanned} open reports. Found ${(data.clusters as unknown[]).length} likely duplicate cluster(s).`
       case 'hotspot_analysis':

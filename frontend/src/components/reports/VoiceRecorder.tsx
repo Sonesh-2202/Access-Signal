@@ -14,6 +14,11 @@ interface SpeechRecognitionLike {
   onend: (() => void) | null
 }
 
+function hasRecognition(): boolean {
+  const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }
+  return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition)
+}
+
 function getRecognition(): SpeechRecognitionLike | null {
   const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }
   const C = w.SpeechRecognition ?? w.webkitSpeechRecognition
@@ -118,6 +123,8 @@ export function VoiceRecorder({ onDone, disabled }: { onDone: (n: VoiceNote) => 
   if (state === 'unsupported') {
     return <p className="text-sm text-muted">Voice recording isn’t supported in this browser. Type a description instead.</p>
   }
+  // Firefox records audio but has no Web Speech API: say so before recording, not after.
+  const canTranscribe = typeof window !== 'undefined' && hasRecognition()
 
   return (
     <div>
@@ -138,6 +145,11 @@ export function VoiceRecorder({ onDone, disabled }: { onDone: (n: VoiceNote) => 
         <Button onClick={start} disabled={disabled} icon={<Icon name="mic" size={16} />}>
           Record a voice note
         </Button>
+      )}
+      {state === 'idle' && !canTranscribe && (
+        <p className="mt-1 text-sm text-muted">
+          This browser can record a voice note but can’t transcribe it as you speak. Please also type a short description below.
+        </p>
       )}
       {state === 'denied' && <p className="mt-1 text-sm text-signal">Microphone access was blocked. Allow it in your browser settings, or type instead.</p>}
       {state === 'recording' && (

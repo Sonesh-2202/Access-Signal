@@ -22,6 +22,7 @@ const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'))
 const IssueDetailPage = lazy(() => import('./pages/dashboard/IssueDetail'))
 const Monitor = lazy(() => import('./pages/dashboard/Monitor'))
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Settings = lazy(() => import('./pages/Settings'))
 
 function PageFallback() {
   return (
@@ -60,6 +61,7 @@ export function App() {
         <Route path="/places" element={s(<PlacesPage />)} />
         <Route path="/places/:id" element={s(<PlaceProfile />)} />
         <Route path="/analytics" element={s(<Analytics />)} />
+        <Route path="/settings" element={s(<Settings />)} />
         <Route path="/dashboard" element={s(<ProtectedRoute staff><Dashboard /></ProtectedRoute>)} />
         <Route path="/dashboard/issues/:id" element={s(<ProtectedRoute staff><IssueDetailPage /></ProtectedRoute>)} />
         <Route path="/dashboard/monitor" element={s(<ProtectedRoute staff><Monitor /></ProtectedRoute>)} />

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Badge, SeverityMark } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
+import { Dialog } from '@/components/common/Dialog'
+import { AIKeyPanel } from '@/components/settings/AIKeyPanel'
 import { Field, Input, Select, Textarea } from '@/components/common/Field'
 import { Icon } from '@/components/common/Icon'
 import { Skeleton } from '@/components/common/Skeleton'
@@ -10,10 +12,12 @@ import { LocationSearch } from '@/components/map/LocationSearch'
 import { PointPicker } from '@/components/map/PointPicker'
 import { CategoryGlyph } from '@/components/reports/ReportRow'
 import { VoiceRecorder, type VoiceNote } from '@/components/reports/VoiceRecorder'
-import { useDocumentTitle } from '@/hooks/useAsync'
+import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
 import { api, reverseGeocode } from '@/services/api'
+import { maskedKey, useAIKey } from '@/stores/aiKey'
 import type { Classification, DuplicateCandidate, Evidence } from '@/types'
+import { aiPrivacyNote, aiSourceLabel, isModelSource } from '@/utils/aiSource'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
 import { distance, timeAgo } from '@/utils/format'
@@ -37,6 +41,9 @@ export default function ReportNew() {
   const [params] = useSearchParams()
   const [step, setStep] = useState(0)
   const heading = useRef<HTMLHeadingElement>(null)
+  const aiStatus = useAsync(() => api.aiStatus(), [])
+  const ownKey = useAIKey((s) => s.value)
+  const [keyDialog, setKeyDialog] = useState(false)
 
   const initial = params.get('lat') && params.get('lng') ? { lat: Number(params.get('lat')), lng: Number(params.get('lng')) } : null
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(initial)
@@ -285,7 +292,15 @@ export default function ReportNew() {
               <div className="flex flex-wrap items-center justify-between gap-1">
                 <div>
                   <p className="font-medium">Suggest a category from your evidence</p>
-                  <p className="text-sm text-muted">Your photos and text are read by a model running on AccessSignal’s own server. Nothing is sent to an outside AI service.</p>
+                  <p className="text-sm text-muted">{aiPrivacyNote(aiStatus.data, !!ownKey)}</p>
+                  {aiStatus.data?.byok?.enabled && (
+                    <p className="text-sm text-muted">
+                      {ownKey ? `Using your ${ownKey.provider} key ${maskedKey(ownKey.key)}. ` : ''}
+                      <button type="button" className="min-h-touch underline" onClick={() => setKeyDialog(true)}>
+                        {ownKey ? 'Change AI key' : 'Use your own AI key'}
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <Button onClick={classify} busy={classifying} variant={suggestion ? 'ghost' : 'secondary'}>
                   {suggestion ? 'Ask again' : 'Suggest category'}
@@ -303,11 +318,11 @@ export default function ReportNew() {
                   <div className="flex flex-wrap items-center gap-1">
                     <CategoryGlyph category={suggestion.category} />
                     <p className="font-medium">{subLabel(t, suggestion.category, suggestion.subcategory)}</p>
-                    <Badge tone={suggestion.source === 'lmstudio' ? 'ink' : 'outline'}>
-                      {suggestion.source === 'lmstudio' ? 'Local AI' : 'Keyword rules, AI offline'}
-                    </Badge>
+                    <Badge tone={isModelSource(suggestion.source) ? 'ink' : 'outline'}>{aiSourceLabel(suggestion.source)}</Badge>
+                    {suggestion.model && <span className="font-mono text-xs text-muted">{suggestion.model}</span>}
                   </div>
                   <p className="mt-1 text-sm">{suggestion.summary}</p>
+                  {suggestion.fallback_reason && <p className="mt-0.5 text-xs text-muted">Why this tier: {suggestion.fallback_reason}.</p>}
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
                     <SeverityMark value={suggestion.severity} />
                     <span>Model confidence {Math.round(suggestion.confidence * 100)}%</span>
@@ -337,6 +352,9 @@ export default function ReportNew() {
               </Field>
             </div>
             <p className="text-sm text-muted">You make the final choice. If you pick something different from the suggestion, we use your choice.</p>
+            <Dialog open={keyDialog} onClose={() => setKeyDialog(false)} title="Use your own AI key" variant="sheet">
+              <AIKeyPanel status={aiStatus.data} onSaved={() => setKeyDialog(false)} />
+            </Dialog>
           </div>
         )}
 
