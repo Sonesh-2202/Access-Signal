@@ -154,7 +154,14 @@ class OpenAICompatibleProvider:
             body["response_format"] = {"type": "json_schema", "json_schema": RESPONSE_SCHEMA}
         r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(), timeout=self.timeout)
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"] or ""
+        choice = r.json()["choices"][0]
+        content = choice["message"].get("content") or ""
+        if not content.strip():
+            # Reasoning models can spend the whole max_tokens budget thinking.
+            thought = bool(choice["message"].get("reasoning") or choice["message"].get("reasoning_content"))
+            raise ValueError(f"empty answer (finish_reason={choice.get('finish_reason')}"
+                             f"{', output went to reasoning' if thought else ''})")
+        return content
 
     def _attempt(self, content: list[dict] | str, use_schema: bool, used_images: bool) -> Classification:
         raw = self._chat(content, use_schema)
@@ -230,6 +237,11 @@ class LocalProvider(OpenAICompatibleProvider):
         self.name = kind
         self.label = self.LABELS.get(kind, kind)
         self._health: tuple[float, bool, str | None] = (0.0, False, None)
+        if kind == "ollama":
+            # Verified against Ollama 0.40 + gemma4:12b: over /v1 the model thinks by default
+            # and spends max_tokens on `reasoning`, leaving `content` empty. "none" turns
+            # thinking off; classification doesn't need it. LM Studio requests are unchanged.
+            self.extra_body = {"reasoning_effort": "none"}
 
     def status(self) -> dict:
         checked, ok, model = self._health

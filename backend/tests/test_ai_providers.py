@@ -143,6 +143,19 @@ def test_vision_accepted_marks_images_reviewed(fake):
     assert content[0]["type"] == "image_url" and content[-1]["type"] == "text"
 
 
+def test_ollama_turns_thinking_off_and_lmstudio_request_is_unchanged(fake):
+    LocalProvider("ollama", fake.base, "gemma4:12b").classify("Ramp blocked", [])
+    assert fake.chat_calls()[-1]["body"]["reasoning_effort"] == "none"
+    LocalProvider("lmstudio", fake.base, "fake-model").classify("Ramp blocked", [])
+    assert "reasoning_effort" not in fake.chat_calls()[-1]["body"]
+
+
+def test_empty_answer_from_a_thinking_model_is_explained(fake):
+    fake.reply = ""
+    with pytest.raises(ProviderError, match="empty answer"):
+        LocalProvider("ollama", fake.base, "gemma4:12b").classify("Ramp blocked", [])
+
+
 def test_schema_rejection_retries_without_schema(fake):
     fake.reject_schema = True
     c = LocalProvider("lmstudio", fake.base, "fake-model").classify("Ramp blocked", [])
