@@ -1,28 +1,33 @@
-"""Accessibility classification via a local LM Studio server (OpenAI-compatible API),
-with a deterministic keyword classifier as fallback when the model is offline,
-slow, or returns something we can't validate."""
+"""Accessibility classification through a chain of model tiers (see providers.py),
+ending in a deterministic keyword classifier for when every model is offline, slow,
+over quota, or returns something we can't validate.
 
-import base64
-import json
+Which tiers run is set by AI_PROVIDER:
+    lmstudio  LM Studio on this machine (default)
+    ollama    Ollama on this machine
+    cloud     Gemini, Groq, Nebius: whichever have keys, in AI_CLOUD_ORDER
+    none      keyword rules only
+A bring-your-own-key provider from the request goes in front of the chain.
+Every result carries `source` and `model`, so the UI can say which tier answered."""
+
 import logging
 import re
-import time
-from dataclasses import dataclass
 
-import httpx
-
-from app.core.config import get_settings
-from app.domain.taxonomy import CATEGORIES, is_valid_category, subcategory_info
+from app.core.config import Settings, get_settings
+from app.domain.taxonomy import subcategory_info
 from app.schemas import Classification
-from app.services.ai.prompts import RESPONSE_SCHEMA, SYSTEM_PROMPT
+from app.services.ai.providers import (
+    CLOUD_PROVIDERS,
+    HeuristicProvider,
+    ImageInput,
+    LocalProvider,
+    Provider,
+    ProviderError,
+)
 
-log = logging.getLogger(__name__)
+__all__ = ["ImageInput", "classify", "get_chain", "heuristic_classify", "reset_chain", "byok_provider"]
 
-
-@dataclass
-class ImageInput:
-    data: bytes
-    mime: str
+log = logging.getLogger("app.services.ai")
 
 
 # ------------------------------------------------------------------ heuristic
@@ -85,123 +90,119 @@ def heuristic_classify(text: str) -> Classification:
     )
 
 
-# ------------------------------------------------------------------ LM Studio
+# ------------------------------------------------------------------ provider chain
 
-class LMStudioClient:
+class LMStudioClient(LocalProvider):
+    """The original LM Studio client, now one LocalProvider among several."""
+
     def __init__(self, base_url: str, model: str, timeout: float):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.timeout = timeout
-        self._health: tuple[float, bool, str | None] = (0.0, False, None)
+        super().__init__("lmstudio", base_url, model, timeout=timeout)
+
+
+class ProviderChain:
+    def __init__(self, providers: list[Provider], fallback_enabled: bool = True):
+        self.providers = providers
+        self.fallback_enabled = fallback_enabled
+        self.heuristic = HeuristicProvider()
+
+    def tiers(self) -> list[dict]:
+        return [p.status() for p in self.providers] + [self.heuristic.status()]
 
     def status(self) -> dict:
-        """Cached for 20s so the UI can poll it cheaply."""
-        checked, ok, model = self._health
-        if time.monotonic() - checked < 20:
-            return {"available": ok, "model": model, "base_url": self.base_url}
-        ok, model = False, None
-        try:
-            r = httpx.get(f"{self.base_url}/models", timeout=2.0)
-            r.raise_for_status()
-            ids = [m.get("id") for m in r.json().get("data", [])]
-            ok = bool(ids)
-            model = self.model if self.model in ids else (ids[0] if ids else None)
-        except (httpx.HTTPError, ValueError):
-            pass
-        self._health = (time.monotonic(), ok, model)
-        return {"available": ok, "model": model, "base_url": self.base_url}
-
-    def _chat(self, content: list[dict] | str, use_schema: bool) -> str:
-        body: dict = {
-            "model": self.status().get("model") or self.model,
-            "temperature": 0.1,
-            "max_tokens": 400,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
+        """Shape kept from the LM Studio-only days (`available`, `model`, `base_url`), plus
+        which tier would answer now and the full list of tiers."""
+        tiers = self.tiers()
+        active = next((t for t in tiers[:-1] if t["available"]), None)
+        return {
+            "available": active is not None,
+            "provider": active["provider"] if active else "heuristic",
+            "label": active["label"] if active else self.heuristic.label,
+            "model": active["model"] if active else None,
+            "base_url": active["base_url"] if active else None,
+            "vision": active["vision"] if active else False,
+            "tiers": tiers,
         }
-        if use_schema:
-            body["response_format"] = {"type": "json_schema", "json_schema": RESPONSE_SCHEMA}
-        r = httpx.post(f"{self.base_url}/chat/completions", json=body, timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
 
-    def classify(self, text: str, images: list[ImageInput]) -> Classification:
-        prompt = f"Report text from the user:\n\"\"\"\n{text.strip() or '(no text provided)'}\n\"\"\""
-        attempts: list[tuple[list[dict] | str, bool]] = []
-        if images:
-            parts: list[dict] = [{"type": "text", "text": prompt + f"\n{len(images)} photo(s) attached."}]
-            for img in images[:3]:
-                b64 = base64.b64encode(img.data).decode("ascii")
-                parts.append({"type": "image_url", "image_url": {"url": f"data:{img.mime};base64,{b64}"}})
-            attempts += [(parts, True), (parts, False)]
-        attempts += [(prompt, True), (prompt, False)]
-
-        last_err: Exception | None = None
-        for content, use_schema in attempts:
+    def classify(self, text: str, images: list[ImageInput], byok: Provider | None = None) -> Classification:
+        reasons: list[str] = []
+        for p in ([byok] if byok else []) + self.providers:
+            if not p.status()["available"]:
+                reasons.append(f"{p.label} unavailable")
+                continue
             try:
-                raw = self._chat(content, use_schema)
-                return self._parse(raw, used_images=bool(images) and not isinstance(content, str))
-            except (httpx.HTTPError, KeyError, ValueError) as e:
-                last_err = e
-                log.info("LM Studio attempt failed (schema=%s images=%s): %s", use_schema, not isinstance(content, str), e)
-                if isinstance(e, httpx.ConnectError | httpx.TimeoutException):
-                    break
-        raise RuntimeError(f"LM Studio classification failed: {last_err}")
-
-    def _parse(self, raw: str, used_images: bool) -> Classification:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
-            raise ValueError("no JSON object in model output")
-        data = json.loads(match.group(0))
-        cat, sub = str(data.get("category", "")).strip(), str(data.get("subcategory", "")).strip()
-        if not is_valid_category(cat, sub):
-            # Model sometimes returns a valid subcategory under the wrong parent.
-            owner = next((c for c, i in CATEGORIES.items() if sub in i["subcategories"]), None)
-            if owner is None:
-                raise ValueError(f"invalid category pair {cat}/{sub}")
-            cat = owner
-        features = [str(f)[:40] for f in data.get("detected_features", [])][:8]
-        if used_images:
-            features = features or ["photo reviewed"]
-        return Classification(
-            category=cat,
-            subcategory=sub,
-            severity=round(min(1.0, max(0.0, float(data.get("severity", 0.5)))), 2),
-            summary=str(data.get("summary", ""))[:240] or subcategory_info(cat, sub)["label"],
-            detected_features=features,
-            confidence=round(min(1.0, max(0.0, float(data.get("confidence", 0.6)))), 2),
-            source="lmstudio",
-            model=self.status().get("model") or self.model,
-        )
+                result = p.classify(text, images)
+            except ProviderError as e:
+                log.warning("%s; trying the next tier", e)
+                reasons.append(str(e))
+                continue
+            if images and not result.images_reviewed:
+                reasons.append(f"{p.label} read the text only; photos were not sent to this model")
+            if reasons:
+                result.fallback_reason = "; ".join(reasons)
+            return result
+        if self.providers and not self.fallback_enabled:
+            raise RuntimeError("AI service unavailable and fallback disabled")
+        result = self.heuristic.classify(text, images)
+        if reasons:
+            result.fallback_reason = "; ".join(reasons)
+        return result
 
 
-_client: LMStudioClient | None = None
+def build_chain(s: Settings) -> ProviderChain:
+    providers: list[Provider] = []
+    if s.ai_provider in ("lmstudio", "ollama"):
+        base, model = s.local_ai()
+        providers.append(LocalProvider(s.ai_provider, base, model, timeout=s.ai_timeout_seconds))
+    elif s.ai_provider == "cloud":
+        for name in s.ai_cloud_order:
+            p = _cloud_provider(s, name, getattr(s, f"{name}_api_key"))
+            if p is not None:
+                providers.append(p)
+    return ProviderChain(providers, fallback_enabled=s.ai_fallback_enabled)
 
 
-def get_client() -> LMStudioClient:
-    global _client
-    if _client is None:
-        s = get_settings()
-        _client = LMStudioClient(s.ai_api_base, s.ai_model, s.ai_timeout_seconds)
-    return _client
+def _cloud_provider(s: Settings, name: str, key: str | None) -> Provider | None:
+    if not key:
+        return None
+    cls = CLOUD_PROVIDERS[name]
+    vision = s.nebius_vision if name == "nebius" else None
+    return cls(getattr(s, f"{name}_api_base"), getattr(s, f"{name}_model"), api_key=key,
+               timeout=min(s.ai_timeout_seconds, 30.0), vision=vision)
 
 
-def classify(text: str, images: list[ImageInput] | None = None) -> Classification:
-    images = images or []
-    s = get_settings()
-    client = get_client()
-    if client.status()["available"]:
-        try:
-            return client.classify(text, images)
-        except RuntimeError as e:
-            if not s.ai_fallback_enabled:
-                raise
-            log.warning("%s; using heuristic classifier", e)
-    elif not s.ai_fallback_enabled:
-        raise RuntimeError("AI service unavailable and fallback disabled")
-    result = heuristic_classify(text)
-    if images and result.category == "other":
-        result.summary = result.summary or "Photo submitted without description."
-    return result
+def byok_provider(name: str, key: str) -> Provider:
+    """A one-request provider built from a browser-held key. Base URL and model always
+    come from server settings, so a caller can't point the server at an arbitrary host."""
+    p = _cloud_provider(get_settings(), name, key)
+    assert p is not None
+    return p
+
+
+_chain: ProviderChain | None = None
+
+
+def get_chain() -> ProviderChain:
+    global _chain
+    if _chain is None:
+        _chain = build_chain(get_settings())
+    return _chain
+
+
+def reset_chain() -> None:
+    global _chain
+    _chain = None
+
+
+def log_startup_status() -> None:
+    """One line per tier at boot, so a self-hoster sees at once whether Ollama/LM Studio
+    was found or the keyword classifier will be answering."""
+    chain = get_chain()
+    for t in chain.tiers()[:-1]:
+        state = "available" if t["available"] else "not reachable" if t["provider"] in ("lmstudio", "ollama") else "no key"
+        log.info("AI tier %s: %s (%s at %s)", t["label"], state, t["model"], t["base_url"])
+    if not chain.status()["available"]:
+        log.info("AI: no model tier available; the keyword classifier will label results as keyword-based.")
+
+
+def classify(text: str, images: list[ImageInput] | None = None, byok: Provider | None = None) -> Classification:
+    return get_chain().classify(text, images or [], byok=byok)

@@ -9,6 +9,10 @@ os.environ["UPLOAD_DIR"] = str(_tmp / "uploads")
 os.environ["AI_API_BASE"] = "http://127.0.0.1:9/v1"  # nothing listens here: forces heuristic fallback
 os.environ["AUTH_RATE_LIMIT_PER_MINUTE"] = "1000"
 os.environ["SECRET_KEY"] = "test-secret-key-with-enough-length-1234"
+os.environ["AI_PROVIDER"] = "lmstudio"
+os.environ["CORS_ORIGINS"] = "http://localhost:5173,https://demo-owner.github.io/"
+for _var in ("GEMINI_API_KEY", "GROQ_API_KEY", "NEBIUS_API_KEY", "STORAGE_BACKEND", "ENVIRONMENT"):
+    os.environ.pop(_var, None)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -54,14 +58,26 @@ def grid_edges(blocked: set[tuple[str, str]] = frozenset(), steps: set[tuple[str
 
 @pytest.fixture(autouse=True)
 def fresh_db():
+    from app.api.dependencies import classify_limiter
     from app.api.routes.auth import limiter
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     reset_graph()
     limiter.reset()
+    classify_limiter.reset()
     yield
     reset_graph()
+
+
+@pytest.fixture
+def fresh_chain():
+    """For tests that swap AI settings: rebuild the provider chain before and after."""
+    from app.services.ai.classifier import reset_chain
+
+    reset_chain()
+    yield
+    reset_chain()
 
 
 @pytest.fixture

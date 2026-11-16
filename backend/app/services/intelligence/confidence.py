@@ -37,7 +37,8 @@ def evidence_quality(report: Report) -> tuple[float, str]:
         parts.append("detailed description")
     ai = report.ai_analysis or {}
     if ai and ai.get("subcategory") == report.subcategory:
-        score += 0.2 if ai.get("source") == "lmstudio" else 0.1
+        # Any model tier counts more than the keyword rules.
+        score += 0.2 if ai.get("source") not in (None, "heuristic") else 0.1
         parts.append("AI classification agrees")
     score = min(1.0, score)
     reason = ("Evidence: " + ", ".join(parts)) if parts else "No photo or voice evidence yet"

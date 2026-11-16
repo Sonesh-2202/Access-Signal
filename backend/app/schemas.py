@@ -68,8 +68,12 @@ class Classification(BaseModel):
     summary: str
     detected_features: list[str] = []
     confidence: float = Field(ge=0, le=1)
-    source: Literal["lmstudio", "heuristic"]
+    # Which tier produced this result. Shown in the UI next to every AI reading.
+    source: Literal["lmstudio", "ollama", "gemini", "groq", "nebius", "heuristic"]
     model: str | None = None
+    images_reviewed: bool = False
+    # Why a higher tier didn't answer (e.g. "Gemini quota or rate limit reached"). Never contains keys.
+    fallback_reason: str | None = Field(default=None, max_length=500)
 
 
 class ClassifyIn(BaseModel):

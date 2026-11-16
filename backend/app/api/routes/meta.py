@@ -7,7 +7,8 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.domain.taxonomy import CATEGORIES, ISSUE_STATUSES, PLACE_FEATURES
 from app.models import PathEdge, Report
-from app.services.ai.classifier import get_client
+from app.services.ai.classifier import get_chain
+from app.services.ai.providers import CLOUD_PROVIDERS
 from app.utils.geo import SERVICE_AREA
 
 router = APIRouter(prefix="/api", tags=["meta"])
@@ -40,4 +41,9 @@ def taxonomy() -> dict:
 @router.get("/meta/ai-status")
 def ai_status() -> dict:
     s = get_settings()
-    return {**get_client().status(), "fallback_enabled": s.ai_fallback_enabled}
+    return {
+        **get_chain().status(),
+        "fallback_enabled": s.ai_fallback_enabled,
+        "mode": s.ai_provider,
+        "byok": {"enabled": s.byok_enabled, "providers": list(CLOUD_PROVIDERS)},
+    }

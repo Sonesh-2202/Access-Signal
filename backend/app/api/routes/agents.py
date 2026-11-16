@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import manager_only
+from app.api.dependencies import ai_request, manager_only
 from app.core.database import get_db
 from app.models import User
 from app.services.agents import access_monitor as am
+from app.services.ai.providers import Provider
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -22,7 +23,8 @@ def list_agents(_: User = Depends(manager_only)) -> dict:
 
 
 @router.post("/{agent}/run")
-def run_agent(agent: str, body: RunIn, _: User = Depends(manager_only), db: Session = Depends(get_db)):
+def run_agent(agent: str, body: RunIn, _: User = Depends(manager_only), db: Session = Depends(get_db),
+              byok: Provider | None = Depends(ai_request)):
     spec = am.AGENTS.get(agent)
     if spec is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown agent")
@@ -32,7 +34,7 @@ def run_agent(agent: str, body: RunIn, _: User = Depends(manager_only), db: Sess
         if agent == "intake":
             return am.run_intake(db, body.report_id, body.apply)
         if agent == "evidence_analysis":
-            return am.run_evidence_analysis(db, body.report_id, body.apply)
+            return am.run_evidence_analysis(db, body.report_id, body.apply, byok=byok)
         if agent == "duplicate_investigation":
             return am.run_duplicate_investigation(db, body.apply)
         if agent == "hotspot_analysis":

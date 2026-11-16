@@ -35,6 +35,19 @@ class SlidingWindowLimiter:
             self._hits.clear()
 
 
+def client_ip(request: Request) -> str:
+    """The caller's address. Behind N trusted proxies (TRUSTED_PROXY_HOPS) that each append
+    to X-Forwarded-For, the Nth entry from the right is the last one a proxy we trust wrote;
+    anything further left came from the client and can be forged."""
+    from app.core.config import get_settings
+
+    hops = get_settings().trusted_proxy_hops
+    if hops > 0:
+        chain = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+        if len(chain) >= hops:
+            return chain[-hops]
+    return request.client.host if request.client else "unknown"
+
+
 def client_key(request: Request, scope: str) -> str:
-    host = request.client.host if request.client else "unknown"
-    return f"{scope}:{host}"
+    return f"{scope}:{client_ip(request)}"

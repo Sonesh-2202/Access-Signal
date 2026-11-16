@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import current_user, optional_user
+from app.api.dependencies import ai_request, current_user, optional_user
 from app.api.serializers import report_detail, report_summary
 from app.core.database import get_db
 from app.domain.taxonomy import is_valid_category, subcategory_info
@@ -22,6 +23,7 @@ from app.schemas import (
 from app.services import issues as issue_service
 from app.services import places as place_service
 from app.services.ai.classifier import ImageInput, classify
+from app.services.ai.providers import Provider
 from app.services.intelligence.confidence import refresh_confidence
 from app.services.intelligence.duplicates import find_duplicates
 from app.services.storage import get_storage
@@ -56,16 +58,23 @@ def _owned_unattached_evidence(db: Session, ids: list[str], user: User) -> list[
 
 
 @router.post("/classify", response_model=Classification)
-def classify_report(body: ClassifyIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def classify_report(body: ClassifyIn, user: User = Depends(current_user), db: Session = Depends(get_db),
+                    byok: Provider | None = Depends(ai_request)):
     evidence = _owned_unattached_evidence(db, body.evidence_ids, user)
     storage = get_storage()
-    images = [ImageInput(storage.read(e.file_path), e.mime_type) for e in evidence if e.type == "photo"]
+    images = []
+    for e in evidence:
+        if e.type == "photo" and e.file_path:
+            try:
+                images.append(ImageInput(storage.read(e.file_path), e.mime_type or "image/jpeg"))
+            except (FileNotFoundError, httpx.HTTPError):
+                continue  # classify from the text rather than fail the whole request
     transcripts = " ".join(e.transcription for e in evidence if e.transcription)
     text = " ".join(filter(None, [body.description, transcripts]))
     if not text.strip() and not images:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add a description, voice note or photo first")
     try:
-        return classify(text, images)
+        return classify(text, images, byok=byok)
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
 

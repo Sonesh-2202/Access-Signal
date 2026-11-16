@@ -9,6 +9,7 @@ and reversible by a manager. See docs/ACCESS_MONITOR_AGENT.md."""
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+import httpx
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -211,7 +212,7 @@ def run_intake(db: Session, report_id: str, apply: bool = False) -> IntakeResult
     )
 
 
-def run_evidence_analysis(db: Session, report_id: str, apply: bool = False) -> EvidenceResult:
+def run_evidence_analysis(db: Session, report_id: str, apply: bool = False, byok=None) -> EvidenceResult:
     r = tool_get_report(db, report_id)
     if r is None:
         raise LookupError("Report not found")
@@ -221,10 +222,10 @@ def run_evidence_analysis(db: Session, report_id: str, apply: bool = False) -> E
         if e.type == "photo" and e.file_path:
             try:
                 images.append(ImageInput(storage.read(e.file_path), e.mime_type or "image/jpeg"))
-            except FileNotFoundError:
+            except (FileNotFoundError, httpx.HTTPError):
                 continue
     text = " ".join(filter(None, [r.description, *[e.transcription for e in r.evidence if e.transcription]]))
-    c = classify(text, images)
+    c = classify(text, images, byok=byok)
     agrees = c.subcategory == r.subcategory or (c.category == r.category and c.category != "other")
     actions: list[Action] = []
     if r.issue:
