@@ -1,0 +1,13 @@
+.env
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+backend/accesssignal.db*
+backend/uploads/
+frontend/test-results/
+frontend/playwright-report/
+.DS_Store

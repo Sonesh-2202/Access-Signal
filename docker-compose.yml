@@ -1,0 +1,52 @@
+# Full stack with PostGIS:  docker compose up --build
+# Then seed once:           docker compose exec backend python -m scripts.seed_demo --reset
+# App: http://localhost:3000   API docs: http://localhost:3000/api/docs
+#
+# LM Studio runs on the host; the backend reaches it via host.docker.internal.
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: accesssignal
+      POSTGRES_PASSWORD: accesssignal
+      POSTGRES_DB: accesssignal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U accesssignal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://accesssignal:accesssignal@db:5432/accesssignal
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      AI_API_BASE: ${AI_API_BASE:-http://host.docker.internal:1234/v1}
+      AI_MODEL: ${AI_MODEL:-gemma-4-12b-it-qat-gguf}
+      UPLOAD_DIR: /data/uploads
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - uploads:/data/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
+  uploads:

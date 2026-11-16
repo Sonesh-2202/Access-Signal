@@ -1,0 +1,168 @@
+@import '@fontsource-variable/newsreader/opsz.css';
+@import '@fontsource-variable/newsreader/opsz-italic.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --header-h: 64px;
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-paper font-sans text-base text-ink;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-ink;
+    font-optical-sizing: auto;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Grid items default to min-width:auto, so a wide table inside a scroll tray would
+     stretch its column past the viewport. Let tracks shrink and the tray scroll. */
+  .grid > * {
+    min-width: 0;
+  }
+
+  ::selection {
+    @apply bg-tint text-ink;
+  }
+
+  a {
+    @apply underline decoration-rule underline-offset-[3px] transition-colors duration-150 ease-out;
+  }
+  a:hover {
+    @apply decoration-ink;
+  }
+
+  /* One focus style everywhere: a 2px signal ring offset from the element. */
+  :focus-visible {
+    outline: 2px solid theme('colors.signal.DEFAULT');
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .meta {
+    @apply font-mono text-xs uppercase tracking-[0.08em] text-muted;
+  }
+
+  .rule-t {
+    @apply border-t border-hair;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-sm bg-hair;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(250, 248, 243, 0.7), transparent);
+    animation: skeleton-sweep 1.4s var(--ease-out) infinite;
+  }
+
+  .fade-up {
+    animation: fade-up 280ms var(--ease-out) both;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scroll-tray {
+    /* relative: absolutely positioned children (e.g. sr-only text) must be clipped too */
+    @apply relative overflow-x-auto overscroll-x-contain;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------ MapLibre overrides */
+
+.maplibregl-map {
+  font-family: theme('fontFamily.sans');
+}
+
+.maplibregl-ctrl-group {
+  @apply rounded border border-hair bg-paper-raised;
+  box-shadow: none !important;
+}
+.maplibregl-ctrl-group button {
+  width: 44px !important;
+  height: 44px !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(28, 27, 25, 0.1) !important;
+}
+
+.maplibregl-ctrl-attrib {
+  @apply bg-paper-raised/90 font-sans text-xs text-muted;
+}
+
+.maplibregl-popup-content {
+  @apply rounded border border-hair bg-paper-raised p-2 text-sm text-ink;
+  box-shadow: 0 1px 0 rgba(28, 27, 25, 0.06), 0 8px 24px -12px rgba(28, 27, 25, 0.25);
+}
+.maplibregl-popup-tip {
+  border-top-color: theme('colors.paper.raised') !important;
+  border-bottom-color: theme('colors.paper.raised') !important;
+}
+.maplibregl-popup-close-button {
+  @apply h-5 w-5 text-lg text-muted;
+}
