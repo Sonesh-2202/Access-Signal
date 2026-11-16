@@ -5,6 +5,7 @@ import { isStaff, readRefreshToken, useAuth } from '@/stores/auth'
 import { cx } from '@/utils/cx'
 import { ButtonLink } from '../common/Button'
 import { Dialog } from '../common/Dialog'
+import { DataSourcePill } from './DataSourcePill'
 import { Icon } from '../common/Icon'
 import { Wordmark } from './Wordmark'
 
@@ -63,6 +64,7 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-1">
+          <DataSourcePill />
           <ButtonLink to="/report" variant="primary" size="sm" className="hidden sm:inline-flex">
             Report a barrier
           </ButtonLink>

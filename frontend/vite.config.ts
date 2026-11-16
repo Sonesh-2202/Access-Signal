@@ -24,7 +24,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           maplibre: ['maplibre-gl'],
-          three: ['three', '@react-three/fiber'],
+          three: ['three', '@react-three/fiber', '@react-three/drei'],
           react: ['react', 'react-dom', 'react-router-dom'],
         },
       },

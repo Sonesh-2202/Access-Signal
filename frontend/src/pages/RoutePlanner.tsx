@@ -9,7 +9,11 @@ import { Container, ErrorNote, PageHeader } from '@/components/layout/Layout'
 import { COLORS } from '@/components/map/config'
 import { LocationSearch } from '@/components/map/LocationSearch'
 import { fitTo, MapView } from '@/components/map/MapView'
-import { setData } from '@/components/map/layers'
+import { addReportLayers, set3D, setData } from '@/components/map/layers'
+import { PerspectiveToggle } from '@/components/map/PerspectiveToggle'
+import { placeMarkers, syncReportMarkers } from '@/components/map/pulseMarkers'
+import { DEMO_TRIPS } from '@/data/mockManhattanData'
+import { prefersReducedMotion } from '@/utils/webgl'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { api } from '@/services/api'
 import type { GeocodeResult, Profile, RouteOption, RouteResponse } from '@/types'
@@ -31,6 +35,29 @@ const PROFILES: { value: Profile; label: string; hint: string }[] = [
   { value: 'low_vision', label: 'Low vision', hint: 'Prefers crossings with audible signals and tactile paving, and lit paths.' },
   { value: 'standard', label: 'Walking', hint: 'Shortest path. Reported barriers count only slightly.' },
 ]
+
+let drawRaf = 0
+
+/** Draws the clear (emerald) route on from start to end, like a pen stroke. */
+function drawOn(map: MLMap) {
+  cancelAnimationFrame(drawRaf)
+  const full = ['step', ['line-progress'], COLORS.ok, 1, COLORS.ok]
+  if (!map.getLayer('route-line')) return
+  if (prefersReducedMotion()) {
+    map.setPaintProperty('route-line', 'line-gradient', full)
+    return
+  }
+  const start = performance.now()
+  const D = 950
+  const tick = (now: number) => {
+    const t = Math.min(1, (now - start) / D)
+    const p = Math.min(0.9999, Math.max(0.0001, 1 - Math.pow(1 - t, 3)))
+    if (!map.getLayer('route-line')) return
+    map.setPaintProperty('route-line', 'line-gradient', t < 1 ? ['step', ['line-progress'], COLORS.ok, p, 'rgba(31,110,67,0)'] : full)
+    if (t < 1) drawRaf = requestAnimationFrame(tick)
+  }
+  drawRaf = requestAnimationFrame(tick)
+}
 
 function markerEl(letter: string) {
   const el = document.createElement('div')
@@ -55,6 +82,8 @@ export default function RoutePlanner() {
   const mapRef = useRef<MLMap | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const markers = useRef<{ from?: Marker; to?: Marker }>({})
+  const barrierMarkers = useRef<Marker[]>([])
+  const [is3D, setIs3D] = useState(false)
   const pickRef = useRef(pick)
   pickRef.current = pick
 
@@ -102,36 +131,82 @@ export default function RoutePlanner() {
     }
   }, [from, to])
 
-  // Route lines (re-run once the map finishes loading, in case the route arrived first)
+  // Route lines (re-run once the map finishes loading, in case the route arrived first).
+  // Blocked routes draw as a dashed terracotta line; clear routes as solid emerald.
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map || !map.getSource('routes')) return
-    const feats = (result?.routes ?? []).map((r, i) => ({ type: 'Feature' as const, geometry: r.geometry, properties: { i, selected: i === selected } }))
+    const feats = (result?.routes ?? []).map((r, i) => ({
+      type: 'Feature' as const,
+      geometry: r.geometry,
+      properties: { i, selected: i === selected, blocked: r.barriers_on_route > 0 },
+    }))
     feats.sort((a, b) => Number(a.properties.selected) - Number(b.properties.selected))
     setData(map, 'routes', { type: 'FeatureCollection', features: feats })
-    const barriers = (result?.routes[selected]?.segments ?? []).flatMap((s) => s.barriers.map((b) => ({ ...b, at: s.coords[Math.floor(s.coords.length / 2)] })))
-    setData(map, 'route-barriers', { type: 'FeatureCollection', features: barriers.map((b) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: b.at }, properties: { label: b.label } })) })
-    if (result?.routes[selected]) fitTo(map, result.routes[selected].geometry.coordinates as [number, number][], 80)
+    barrierMarkers.current.forEach((m) => m.remove())
+    // Barriers from every option, so the blocked route's pin stays visible while the detour is selected.
+    const seen = new Set<string>()
+    const pins = (result?.routes ?? []).flatMap((r) =>
+      r.segments.flatMap((s) => s.barriers.map((b) => ({ ...b, at: s.coords[Math.floor(s.coords.length / 2)] }))),
+    ).filter((b) => !seen.has(b.report_id) && !!seen.add(b.report_id))
+    barrierMarkers.current = placeMarkers(
+      map,
+      { type: 'FeatureCollection', features: pins.map((b) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: b.at }, properties: { id: b.report_id, severity: Math.max(b.severity, 0.85), confidence: b.confidence, status: 'open' } })) },
+      () => true,
+    )
+    if (result?.routes[selected]) {
+      fitTo(map, result.routes.flatMap((x) => x.geometry.coordinates as [number, number][]), 80)
+      if (result.routes.some((x) => x.barriers_on_route === 0)) drawOn(map)
+    }
   }, [result, selected, mapReady])
+
+  function setPerspective(next: boolean) {
+    const map = mapRef.current
+    if (!map || next === is3D) return
+    set3D(map, next)
+    setIs3D(next)
+    announce(next ? '3D street perspective on' : 'Flat map view')
+  }
+
+  function tryTrip(t: (typeof DEMO_TRIPS)[number]) {
+    setFrom(t.from)
+    setTo(t.to)
+    run(t.from, t.to)
+  }
 
   function onReady(map: MLMap) {
     mapRef.current = map
-    map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-    map.addLayer({ id: 'route-casing', type: 'line', source: 'routes', filter: ['==', ['get', 'selected'], true], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': COLORS.paper, 'line-width': 9 } })
+    addReportLayers(map)
+    map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, lineMetrics: true })
+    map.addLayer({ id: 'route-casing', type: 'line', source: 'routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': COLORS.paper, 'line-width': ['case', ['get', 'selected'], 10, 6], 'line-opacity': 0.9 } })
+    map.addLayer({
+      id: 'route-line-blocked',
+      type: 'line',
+      source: 'routes',
+      filter: ['==', ['get', 'blocked'], true],
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': COLORS.signal,
+        'line-width': ['case', ['get', 'selected'], 4.5, 3],
+        'line-opacity': ['case', ['get', 'selected'], 1, 0.7],
+        'line-dasharray': [1.6, 1.2],
+      },
+    })
     map.addLayer({
       id: 'route-line',
       type: 'line',
       source: 'routes',
+      filter: ['==', ['get', 'blocked'], false],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': ['case', ['get', 'selected'], COLORS.ink, COLORS.muted],
-        'line-width': ['case', ['get', 'selected'], 5, 3],
-        'line-opacity': ['case', ['get', 'selected'], 1, 0.55],
-        'line-dasharray': ['case', ['get', 'selected'], ['literal', [1, 0]], ['literal', [2, 1.5]]],
+        'line-width': ['case', ['get', 'selected'], 6, 3.5],
+        'line-opacity': ['case', ['get', 'selected'], 1, 0.6],
+        'line-gradient': ['step', ['line-progress'], COLORS.ok, 1, COLORS.ok],
       },
     })
-    map.addSource('route-barriers', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-    map.addLayer({ id: 'route-barriers', type: 'circle', source: 'route-barriers', paint: { 'circle-radius': 7, 'circle-color': COLORS.signal, 'circle-stroke-color': COLORS.paper, 'circle-stroke-width': 2 } })
+    // Open reports nearby, quieter than the barriers on the route itself.
+    api.reportsGeoJSON({}).then((fc) => setData(map, 'reports', fc)).catch(() => undefined)
+    syncReportMarkers(map, () => undefined)
     map.on('click', (e) => {
       const which = pickRef.current
       if (!which) return
@@ -202,6 +277,23 @@ export default function RoutePlanner() {
             </div>
           </form>
 
+          <div className="border-t border-hair pt-2">
+            <p className="meta">Or try a trip with a known barrier</p>
+            <ul className="mt-1 flex flex-wrap gap-1">
+              {DEMO_TRIPS.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => tryTrip(t)}
+                    className="min-h-touch rounded-full border border-stone-300/80 bg-paper-raised px-2 text-sm transition-[background-color,transform] duration-150 ease-out hover:bg-paper-sunk active:scale-[0.97]"
+                  >
+                    {t.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
           {error && <ErrorNote error={error} />}
           {busy && !result && (
             <div aria-hidden>
@@ -215,7 +307,10 @@ export default function RoutePlanner() {
 
         <div className="lg:col-span-7">
           <div className="lg:sticky lg:top-[88px]">
-            <MapView label="Route map" onReady={onReady} className="h-[360px] border border-hair lg:h-[calc(100vh-180px)]" />
+            <MapView label="Route map" onReady={onReady} className="h-[360px] border border-hair lg:h-[calc(100vh-180px)]">
+              {mapReady && <PerspectiveToggle value={is3D} onChange={setPerspective} className="absolute left-1 top-1" />}
+              {result && <RouteLegend />}
+            </MapView>
           </div>
         </div>
 
@@ -231,7 +326,35 @@ export default function RoutePlanner() {
   )
 }
 
+function RouteLegend() {
+  return (
+    <div className="absolute bottom-1 left-1 z-10 flex flex-col gap-0.5 rounded-sm border border-stone-300/80 bg-paper-raised/90 px-1 py-0.5 text-xs" aria-hidden>
+      <span className="inline-flex items-center gap-1">
+        <svg width="28" height="6"><line x1="1" y1="3" x2="27" y2="3" stroke={COLORS.ok} strokeWidth="4" strokeLinecap="round" /></svg>
+        Step-free
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <svg width="28" height="6"><line x1="1" y1="3" x2="27" y2="3" stroke={COLORS.signal} strokeWidth="3" strokeDasharray="5 4" /></svg>
+        Passes a reported barrier
+      </span>
+    </div>
+  )
+}
+
+/** "+170 m · +3 min" against the shortest option, so the cost of the detour is explicit. */
+function Delta({ r, base }: { r: RouteOption; base: RouteOption }) {
+  const dm = r.distance_m - base.distance_m
+  const dt = Math.round(r.duration_min - base.duration_min)
+  if (r === base || dm <= 0) return <span className="tabular font-mono text-xs text-muted">shortest</span>
+  return (
+    <span className="tabular font-mono text-xs text-muted">
+      +{distance(dm)} · +{dt < 1 ? '<1' : dt} min vs shortest
+    </span>
+  )
+}
+
 function RouteResults({ result, selected, setSelected }: { result: RouteResponse; selected: number; setSelected: (i: number) => void }) {
+  const base = result.routes.reduce((a, b) => (b.distance_m < a.distance_m ? b : a), result.routes[0])
   return (
     <section aria-labelledby="routes-h" className="fade-up">
       <h2 id="routes-h" className="meta">
@@ -247,8 +370,25 @@ function RouteResults({ result, selected, setSelected }: { result: RouteResponse
             <input type="radio" name="route" checked={i === selected} onChange={() => setSelected(i)} className="mt-[4px] h-[18px] w-[18px] accent-signal" />
             <span>
               <span className="flex flex-wrap items-baseline justify-between gap-x-2">
-                <span className="font-medium">{r.label}</span>
+                <span className="inline-flex items-center gap-1 font-medium">
+                  <svg width="20" height="6" aria-hidden className="shrink-0">
+                    {r.barriers_on_route > 0 ? (
+                      <line x1="1" y1="3" x2="19" y2="3" stroke={COLORS.signal} strokeWidth="3" strokeDasharray="4 3" />
+                    ) : (
+                      <line x1="1" y1="3" x2="19" y2="3" stroke={COLORS.ok} strokeWidth="4" strokeLinecap="round" />
+                    )}
+                  </svg>
+                  {r.label}
+                </span>
                 <span className="tabular font-mono text-sm">{distance(r.distance_m)} · {minutes(r.duration_min)}</span>
+              </span>
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2">
+                <Delta r={r} base={base} />
+                {r.barriers_on_route === 0 ? (
+                  <span className="inline-flex items-center gap-0.5 rounded-sm bg-ok-wash px-0.5 text-xs font-medium text-ok">Step-free</span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 rounded-sm bg-signal-wash px-0.5 text-xs font-medium text-signal-deep">Barrier on route</span>
+                )}
               </span>
               <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted">
                 <span>Path quality {Math.round(r.accessibility_score * 100)}</span>

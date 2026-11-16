@@ -96,7 +96,7 @@
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, rgba(250, 248, 243, 0.7), transparent);
+    background: linear-gradient(90deg, transparent, rgba(252, 251, 248, 0.7), transparent);
     animation: skeleton-sweep 1.4s var(--ease-out) infinite;
   }
 
@@ -113,6 +113,27 @@
     @apply relative overflow-x-auto overscroll-x-contain;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+@keyframes step-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes pill-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
   }
 }
 
@@ -148,7 +169,7 @@
   height: 44px !important;
 }
 .maplibregl-ctrl-group button + button {
-  border-top: 1px solid rgba(28, 27, 25, 0.1) !important;
+  border-top: 1px solid rgba(26, 25, 23, 0.1) !important;
 }
 
 .maplibregl-ctrl-attrib {
@@ -157,7 +178,7 @@
 
 .maplibregl-popup-content {
   @apply rounded border border-hair bg-paper-raised p-2 text-sm text-ink;
-  box-shadow: 0 1px 0 rgba(28, 27, 25, 0.06), 0 8px 24px -12px rgba(28, 27, 25, 0.25);
+  box-shadow: 0 1px 0 rgba(26, 25, 23, 0.06), 0 8px 24px -12px rgba(26, 25, 23, 0.25);
 }
 .maplibregl-popup-tip {
   border-top-color: theme('colors.paper.raised') !important;
@@ -165,4 +186,46 @@
 }
 .maplibregl-popup-close-button {
   @apply h-5 w-5 text-lg text-muted;
+}
+
+/* ------------------------------------------------------------ report markers */
+
+/* MapLibre owns the marker element's transform (a transition there would make markers
+   lag behind the map while panning), so hover scales the inner drawing instead. */
+.as-marker {
+  cursor: pointer;
+}
+.as-marker svg {
+  display: block;
+  overflow: visible;
+  transition: transform 160ms var(--ease-out);
+}
+@media (hover: hover) {
+  .as-marker:hover svg {
+    transform: scale(1.12);
+  }
+}
+.as-marker-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: marker-pulse var(--period, 2.4s) cubic-bezier(0.22, 1, 0.36, 1) var(--delay, 0s) infinite;
+}
+
+@keyframes marker-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.42;
+  }
+  80%,
+  100% {
+    transform: scale(3.1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .as-marker-pulse {
+    animation: none;
+    opacity: 0;
+  }
 }

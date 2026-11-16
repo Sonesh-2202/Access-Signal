@@ -3,12 +3,13 @@ import type { Config } from 'tailwindcss'
 /**
  * AccessSignal design tokens.
  *
- * Five colours only:
- *   paper  #F4F1EA  warm off-white surface
- *   ink    #1C1B19  primary text (15.3:1 on paper, AAA)
- *   muted  #5F5A51  secondary text (6.1:1 on paper, 5.0:1 on tint; borders use ink at 6-18% alpha)
- *   signal #A8360F  the single accent: critical barriers, primary actions, focus (5.8:1 on paper)
+ * Core colours:
+ *   paper  #F8F6F1  warm off-white surface (sunk #EFECE6 for secondary containers)
+ *   ink    #1A1917  primary text (16.6:1 on paper, AAA)
+ *   muted  #5F5A51  secondary text (6.4:1 on paper; borders use ink at 10-18% alpha)
+ *   signal #B83A24  terracotta accent: critical barriers, primary actions, focus (5.3:1 on paper)
  *   tint   #E7DCC3  understated ochre wash for tags and selected rows
+ * State colours: ok #1F6E43 (resolved / verified), warn #D97706 (under review / repair).
  * (Ratios measured with the WCAG 2.x relative luminance formula.)
  *
  * Spacing is a strict 8px scale. Tailwind's default numeric spacing is replaced so
@@ -20,14 +21,19 @@ const config: Config = {
     colors: {
       transparent: 'transparent',
       current: 'currentColor',
-      paper: { DEFAULT: '#F4F1EA', raised: '#FAF8F3', sunk: '#ECE7DC' },
-      ink: { DEFAULT: '#1C1B19', soft: '#2E2C28' },
+      paper: { DEFAULT: '#F8F6F1', raised: '#FCFBF8', sunk: '#EFECE6' },
+      ink: { DEFAULT: '#1A1917', soft: '#2E2C28' },
       muted: { DEFAULT: '#5F5A51' },
-      signal: { DEFAULT: '#A8360F', deep: '#862B0C', wash: '#F3E2D8' },
+      signal: { DEFAULT: '#B83A24', deep: '#93301D', wash: '#F6E4DE' },
       tint: { DEFAULT: '#E7DCC3', deep: '#D9CBA9' },
+      // State colours. Used for status marks only, never as decoration.
+      // `ok` 6.2:1 on paper. `warn` is a fill colour; text uses `warn.deep` (7.4:1).
+      ok: { DEFAULT: '#1F6E43', wash: '#E2EDE5' },
+      warn: { DEFAULT: '#D97706', deep: '#8A4B05', wash: '#FBEEDA' },
+      stone: { 200: '#E5E0D8', 300: '#D6D3D1' },
       // Structural lines: ink at low alpha, not additional colours.
-      hair: 'rgba(28, 27, 25, 0.10)',
-      rule: 'rgba(28, 27, 25, 0.18)',
+      hair: 'rgba(26, 25, 23, 0.10)',
+      rule: 'rgba(26, 25, 23, 0.18)',
       white: '#FFFFFF',
     },
     spacing: {

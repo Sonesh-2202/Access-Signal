@@ -187,15 +187,15 @@ function ModelPanel({ place }: { place: PlaceDetail }) {
 
 /** 2D fallback: front elevation drawn as SVG. */
 function Elevation({ features }: { features: Record<string, FeatureStatus> }) {
-  const col = (s?: FeatureStatus) => (s === 'unavailable' ? '#A8360F' : s === 'available' ? '#1C1B19' : s === 'limited' ? '#5F5A51' : '#D9CBA9')
+  const col = (s?: FeatureStatus) => (s === 'unavailable' ? '#B83A24' : s === 'available' ? '#1A1917' : s === 'limited' ? '#5F5A51' : '#D9CBA9')
   return (
     <svg viewBox="0 0 400 280" className="h-full w-full" aria-hidden>
-      <rect x="40" y="40" width="320" height="190" fill="#F4F1EA" stroke="#1C1B19" strokeOpacity="0.3" />
+      <rect x="40" y="40" width="320" height="190" fill="#F8F6F1" stroke="#1A1917" strokeOpacity="0.3" />
       <rect x="175" y="130" width="50" height="88" fill={col(features.step_free_entrance ?? features.automatic_door)} opacity="0.9" />
       <rect x="160" y="218" width="80" height="12" fill="#D9CBA9" />
       {'ramp' in features && <path d="M240 230 L330 230 L240 218 Z" fill={col(features.ramp)} />}
       {'elevator' in features && <rect x="70" y="90" width="40" height="140" fill={col(features.elevator)} opacity="0.85" />}
-      <line x1="10" y1="230" x2="390" y2="230" stroke="#1C1B19" strokeOpacity="0.4" />
+      <line x1="10" y1="230" x2="390" y2="230" stroke="#1A1917" strokeOpacity="0.4" />
     </svg>
   )
 }

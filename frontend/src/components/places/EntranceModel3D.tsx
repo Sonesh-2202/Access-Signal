@@ -4,7 +4,7 @@ import type { Group } from 'three'
 import type { FeatureStatus } from '@/types'
 import { prefersReducedMotion } from '@/utils/webgl'
 
-const C = { paper: '#F4F1EA', sunk: '#ECE7DC', tint: '#D9CBA9', ink: '#1C1B19', muted: '#8C867B', signal: '#A8360F' }
+const C = { paper: '#F8F6F1', sunk: '#EFECE6', tint: '#D9CBA9', ink: '#1A1917', muted: '#8C867B', signal: '#B83A24' }
 
 const statusColor = (s: FeatureStatus | undefined) =>
   s === 'unavailable' ? C.signal : s === 'limited' ? C.muted : s === 'available' ? C.ink : C.tint

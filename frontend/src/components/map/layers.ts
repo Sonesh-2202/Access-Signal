@@ -136,7 +136,7 @@ export function addHeatLayer(map: MLMap) {
       'heatmap-opacity': 0.85,
       'heatmap-color': [
         'interpolate', ['linear'], ['heatmap-density'],
-        0, 'rgba(244,241,234,0)',
+        0, 'rgba(248,246,241,0)',
         0.25, 'rgba(231,220,195,0.7)',
         0.6, 'rgba(217,203,169,0.9)',
         1, COLORS.signal,
@@ -187,25 +187,37 @@ export function setVisible(map: MLMap, ids: string[], on: boolean) {
   for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
 }
 
+/** Camera for "3D street perspective": tilted, and rotated so avenues run straight up the screen. */
+export const STREET_PERSPECTIVE = { pitch: 50, bearing: -29 }
+
 /** Extruded buildings from the OpenMapTiles schema (OpenFreeMap). No-op for raster styles. */
-export function set3D(map: MLMap, on: boolean): boolean {
+export function set3D(map: MLMap, on: boolean, opts: { animate?: boolean } = {}): boolean {
   const hasVector = !!map.getSource('openmaptiles')
   if (on && hasVector && !map.getLayer('buildings-3d')) {
+    // Draw below whichever data layer comes first so pins and routes stay on top.
+    const before = ['route-casing', 'route-line', 'hotspot-fill', 'heat', 'coverage-fill', 'report-clusters', 'plist'].find((id) => map.getLayer(id))
     map.addLayer({
       id: 'buildings-3d',
       type: 'fill-extrusion',
       source: 'openmaptiles',
       'source-layer': 'building',
-      minzoom: 14,
+      minzoom: 13.5,
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 0], 0, '#ECE7DC', 200, '#D9CBA9'],
-        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 0],
+        // Warm limestone, a little darker as buildings get taller.
+        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 0], 0, '#EFECE6', 40, '#E5E0D8', 180, '#D6CFC4'],
+        // Grow out of the ground as the tiles load rather than popping in.
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13.5, 0, 14.5, ['coalesce', ['get', 'render_height'], 0]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-        'fill-extrusion-opacity': 0.85,
+        'fill-extrusion-opacity': 0.9,
+        'fill-extrusion-vertical-gradient': true,
       },
-    }, map.getLayer('report-clusters') ? 'report-clusters' : undefined)
+    }, before)
+    map.setLight({ anchor: 'viewport', color: '#FFF8EE', intensity: 0.32, position: [1.2, 200, 35] })
   }
   if (map.getLayer('buildings-3d')) setVisible(map, ['buildings-3d'], on)
-  map.easeTo({ pitch: on ? 55 : 0, bearing: on ? -29 : 0, duration: 500 })
+  const target = on ? { ...STREET_PERSPECTIVE, zoom: Math.max(map.getZoom(), 15) } : { pitch: 0, bearing: 0 }
+  const still = opts.animate === false || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (still) map.jumpTo(target)
+  else map.easeTo({ ...target, duration: 1100, easing: (t) => 1 - Math.pow(1 - t, 4) })
   return hasVector
 }

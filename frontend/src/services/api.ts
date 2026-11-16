@@ -1,4 +1,6 @@
+import { isDemo, markDemo, markLive, useDataSource } from '@/stores/dataSource'
 import { readRefreshToken, useAuth } from '@/stores/auth'
+import * as local from './mockApi'
 import type {
   Classification,
   DuplicateCandidate,
@@ -21,12 +23,92 @@ import type {
 
 const BASE = import.meta.env.VITE_API_BASE ?? ''
 
+export interface Resolution {
+  overall_median_hours: number | null
+  overall_p90_hours: number | null
+  by_category: { category: string; label: string; count: number; median_hours: number }[]
+  /** Present in the local dataset; derived from categories when the live API omits it. */
+  by_agency?: { agency: string; label: string; count: number; median_hours: number; p90_hours?: number }[]
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** True when the error body came from the API itself (JSON), not a proxy or static host. */
+    public fromApi = true,
   ) {
     super(message)
+  }
+}
+
+/* ------------------------------------------------------------------ demo fallback */
+
+/** A hung connection counts as an outage after this long. Fast failures fall back at once. */
+const LIVE_TIMEOUT_MS = 8000
+
+function isOutage(e: unknown): boolean {
+  if (e instanceof ApiError) return e.status >= 500 || (!e.fromApi && e.status >= 400 && e.status !== 401 && e.status !== 403)
+  const name = (e as Error | undefined)?.name
+  // TypeError: fetch could not connect. SyntaxError: a 200 that wasn't JSON (e.g. an SPA host's index.html).
+  return e instanceof TypeError || e instanceof SyntaxError || name === 'TimeoutError'
+}
+
+/**
+ * Runs the live request; if the API is down (network error, 5xx, non-API response or
+ * timeout) answers from the local Manhattan dataset instead and flips the session into
+ * demo mode. Client errors such as 404 or 422 are real answers and are rethrown.
+ */
+async function withFallback<T>(live: () => Promise<T>, local: () => T, label: string): Promise<T> {
+  const fromLocal = () => {
+    try {
+      return local()
+    } catch (e) {
+      throw new ApiError((e as { status?: number }).status ?? 500, (e as Error).message)
+    }
+  }
+  if (isDemo()) return fromLocal()
+  // Until the first request settles, later ones wait for it (at most 300 ms), so an outage
+  // costs one failed request instead of one per component.
+  if (useDataSource.getState().mode === 'unknown') {
+    if (firstProbe) {
+      await Promise.race([firstProbe, new Promise((r) => setTimeout(r, 300))])
+      if (isDemo()) return fromLocal()
+    } else {
+      let settle!: () => void
+      firstProbe = new Promise<void>((r) => (settle = r))
+      try {
+        return await runLive(live, fromLocal, label)
+      } finally {
+        settle()
+      }
+    }
+  }
+  return runLive(live, fromLocal, label)
+}
+
+let firstProbe: Promise<void> | null = null
+
+/** Test hook: forget the outcome of the first request. */
+export function resetDataSourceProbe() {
+  firstProbe = null
+}
+
+async function runLive<T>(live: () => Promise<T>, fromLocal: () => T, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error('Request timed out'), { name: 'TimeoutError' })), LIVE_TIMEOUT_MS)
+    })
+    const value = await Promise.race([live(), timeout])
+    markLive()
+    return value
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError' || !isOutage(e)) throw e
+    markDemo(`${label}: ${(e as Error).message || 'unreachable'}`)
+    return fromLocal()
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -46,6 +128,7 @@ function qs(q?: Query): string {
 
 async function parseError(res: Response): Promise<ApiError> {
   let msg = res.statusText || 'Request failed'
+  if (!(res.headers.get('content-type') ?? '').includes('json')) return new ApiError(res.status, msg, false)
   try {
     const body = await res.json()
     if (typeof body.detail === 'string') msg = body.detail
@@ -113,8 +196,9 @@ export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
 
   // meta
-  taxonomy: () => request<Taxonomy>('GET', '/api/meta/taxonomy'),
-  aiStatus: () => request<{ available: boolean; model: string | null; fallback_enabled: boolean }>('GET', '/api/meta/ai-status'),
+  taxonomy: () => withFallback(() => request<Taxonomy>('GET', '/api/meta/taxonomy'), local.taxonomy, 'taxonomy'),
+  aiStatus: () =>
+    withFallback(() => request<{ available: boolean; model: string | null; fallback_enabled: boolean }>('GET', '/api/meta/ai-status'), local.aiStatus, 'ai-status'),
 
   // evidence
   uploadEvidence: (file: Blob, filename: string, extra: { transcription?: string; alt_text?: string } = {}) => {
@@ -131,21 +215,32 @@ export const api = {
   duplicates: (body: { lat: number; lng: number; category: string; subcategory: string; description: string }) =>
     request<DuplicateCandidate[]>('POST', '/api/reports/duplicates', { body }),
   createReport: (body: unknown) => request<ReportDetail>('POST', '/api/reports', { body }),
-  reports: (query: Query, signal?: AbortSignal) => request<ReportPage>('GET', '/api/reports', { query, signal }),
-  reportsGeoJSON: (query: Query) => request<GeoJSON.FeatureCollection>('GET', '/api/reports/geojson', { query }),
-  report: (id: string) => request<ReportDetail>('GET', `/api/reports/${id}`),
+  reports: (query: Query, signal?: AbortSignal) =>
+    withFallback(() => request<ReportPage>('GET', '/api/reports', { query, signal }), () => local.reports(query), 'reports'),
+  reportsGeoJSON: (query: Query) =>
+    withFallback(() => request<GeoJSON.FeatureCollection>('GET', '/api/reports/geojson', { query }), () => local.reportsGeoJSON(query), 'reports'),
+  report: (id: string) => withFallback(() => request<ReportDetail>('GET', `/api/reports/${id}`), () => local.report(id), 'report'),
   verifyReport: (id: string, still_present: boolean, note?: string) =>
-    request<ReportDetail>('POST', `/api/reports/${id}/verify`, { body: { still_present, note } }),
+    withFallback(
+      () => request<ReportDetail>('POST', `/api/reports/${id}/verify`, { body: { still_present, note } }),
+      () => local.verifyReport(id, still_present),
+      'verify',
+    ),
   deleteReport: (id: string) => request<void>('DELETE', `/api/reports/${id}`),
 
   // places
-  places: (query: Query, signal?: AbortSignal) => request<PlaceSummary[]>('GET', '/api/places', { query, signal }),
-  placeTypes: () => request<{ type: string; count: number }[]>('GET', '/api/places/types'),
-  place: (id: string) => request<PlaceDetail>('GET', `/api/places/${id}`),
+  places: (query: Query, signal?: AbortSignal) =>
+    withFallback(() => request<PlaceSummary[]>('GET', '/api/places', { query, signal }), () => local.places(query), 'places'),
+  placeTypes: () => withFallback(() => request<{ type: string; count: number }[]>('GET', '/api/places/types'), local.placeTypes, 'places'),
+  place: (id: string) => withFallback(() => request<PlaceDetail>('GET', `/api/places/${id}`), () => local.place(id), 'place'),
 
   // routing
   route: (origin: [number, number], destination: [number, number], profile: Profile, avoid_unknown: boolean) =>
-    request<RouteResponse>('POST', '/api/routing/route', { body: { origin, destination, profile, avoid_unknown, alternatives: 2 } }),
+    withFallback(
+      () => request<RouteResponse>('POST', '/api/routing/route', { body: { origin, destination, profile, avoid_unknown, alternatives: 2 } }),
+      () => local.route(origin, destination, profile, avoid_unknown),
+      'routing',
+    ),
 
   // issues
   issues: (query: Query) => request<{ items: Issue[]; total: number }>('GET', '/api/issues', { query }),
@@ -161,15 +256,28 @@ export const api = {
   },
 
   // analytics
-  overview: () => request<Overview>('GET', '/api/analytics/overview'),
+  overview: () => withFallback(() => request<Overview>('GET', '/api/analytics/overview'), local.overview, 'analytics'),
   trends: (weeks = 12) =>
-    request<{ weeks: string[]; reported: number[]; resolved: number[]; by_category: Record<string, number[]> }>('GET', '/api/analytics/trends', { query: { weeks } }),
-  categories: () => request<{ category: string; label: string; total: number; open: number; mean_severity: number }[]>('GET', '/api/analytics/categories'),
-  resolution: () =>
-    request<{ overall_median_hours: number | null; overall_p90_hours: number | null; by_category: { category: string; label: string; count: number; median_hours: number }[] }>('GET', '/api/analytics/resolution'),
-  heat: () => request<GeoJSON.FeatureCollection>('GET', '/api/analytics/heat'),
-  coverage: () => request<GeoJSON.FeatureCollection & { summary: { cells: number; cells_without_data: number } }>('GET', '/api/analytics/coverage'),
-  hotspots: () => request<Hotspot[]>('GET', '/api/analytics/hotspots'),
+    withFallback(
+      () => request<{ weeks: string[]; reported: number[]; resolved: number[]; by_category: Record<string, number[]> }>('GET', '/api/analytics/trends', { query: { weeks } }),
+      local.trends,
+      'analytics',
+    ),
+  categories: () =>
+    withFallback(
+      () => request<{ category: string; label: string; total: number; open: number; mean_severity: number }[]>('GET', '/api/analytics/categories'),
+      local.categories,
+      'analytics',
+    ),
+  resolution: () => withFallback(() => request<Resolution>('GET', '/api/analytics/resolution'), local.resolution, 'analytics'),
+  heat: () => withFallback(() => request<GeoJSON.FeatureCollection>('GET', '/api/analytics/heat'), local.heat, 'analytics'),
+  coverage: () =>
+    withFallback(
+      () => request<GeoJSON.FeatureCollection & { summary: { cells: number; cells_without_data: number } }>('GET', '/api/analytics/coverage'),
+      local.coverage,
+      'analytics',
+    ),
+  hotspots: () => withFallback(() => request<Hotspot[]>('GET', '/api/analytics/hotspots'), local.hotspots, 'analytics'),
   recalcHotspots: () => request<Hotspot[]>('POST', '/api/analytics/hotspots/recalculate'),
 
   // agents

@@ -24,7 +24,7 @@ const RASTER: StyleSpecification = {
     },
   },
   layers: [
-    { id: 'bg', type: 'background', paint: { 'background-color': '#F4F1EA' } },
+    { id: 'bg', type: 'background', paint: { 'background-color': '#F8F6F1' } },
     { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.85, 'raster-opacity': 0.9 } },
   ],
 }
@@ -38,10 +38,14 @@ export const LABEL_FONT = ['Noto Sans Regular']
 export const LABEL_FONT_BOLD = ['Noto Sans Bold']
 
 export const COLORS = {
-  paper: '#F4F1EA',
-  raised: '#FAF8F3',
-  ink: '#1C1B19',
+  paper: '#F8F6F1',
+  raised: '#FCFBF8',
+  sunk: '#EFECE6',
+  ink: '#1A1917',
   muted: '#5F5A51',
-  signal: '#A8360F',
+  signal: '#B83A24',
   tint: '#E7DCC3',
+  ok: '#1F6E43',
+  warn: '#D97706',
+  stone: '#E5E0D8',
 }

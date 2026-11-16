@@ -18,6 +18,8 @@ import {
 } from '@/components/map/layers'
 import { LocationSearch } from '@/components/map/LocationSearch'
 import { MapView } from '@/components/map/MapView'
+import { PerspectiveToggle } from '@/components/map/PerspectiveToggle'
+import { syncReportMarkers } from '@/components/map/pulseMarkers'
 import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useDebounced, useDocumentTitle, useMediaQuery } from '@/hooks/useAsync'
 import { useTaxonomy } from '@/hooks/useTaxonomy'
@@ -71,6 +73,7 @@ export default function MapPage() {
   const [params] = useSearchParams()
   const desktop = useMediaQuery('(min-width: 1024px)')
   const mapRef = useRef<MLMap | null>(null)
+  const markersRef = useRef<ReturnType<typeof syncReportMarkers> | null>(null)
   const [ready, setReady] = useState(false)
   const [mode, setMode] = useState<'map' | 'list'>(params.get('view') === 'list' ? 'list' : 'map')
   const [sheet, setSheet] = useState(false)
@@ -131,6 +134,13 @@ export default function MapPage() {
     ).catch(() => undefined)
     api.coverage().then((fc) => setData(map, 'coverage', fc)).catch(() => undefined)
 
+    markersRef.current = syncReportMarkers(map, (p, at) => {
+      new maplibregl.Popup({ closeButton: true, maxWidth: '260px', offset: 16 })
+        .setLngLat(at)
+        .setDOMContent(popupNode(p.label ?? 'Report', [p.address ?? '', `${severityBand(p.severity)} severity · confidence ${Math.round(p.confidence * 100)}`], `/reports/${p.id}`, 'View report'))
+        .addTo(map)
+    })
+
     map.on('click', 'report-points', (e) => {
       const f = e.features?.[0]
       if (!f) return
@@ -176,6 +186,7 @@ export default function MapPage() {
   useEffect(() => {
     if (mode === 'list') {
       mapRef.current = null
+      markersRef.current = null
       setReady(false)
       setIs3D(false)
     }
@@ -185,6 +196,7 @@ export default function MapPage() {
     const map = mapRef.current
     if (!map || !ready) return
     ;(Object.keys(layers) as LayerKey[]).forEach((k) => setVisible(map, LAYER_IDS[k], layers[k]))
+    markersRef.current?.refresh()
   }, [layers, ready])
 
   useEffect(() => {
@@ -192,10 +204,9 @@ export default function MapPage() {
     if (map && ready && map.getLayer('report-selected')) map.setFilter('report-selected', ['==', ['get', 'id'], hover ?? ''])
   }, [hover, ready])
 
-  function toggle3D() {
+  function setPerspective(next: boolean) {
     const map = mapRef.current
-    if (!map) return
-    const next = !is3D
+    if (!map || next === is3D) return
     const ok = set3D(map, next)
     setIs3D(next)
     announce(next ? (ok ? '3D buildings on' : 'Tilted view on. This map style has no building heights.') : '3D view off')
@@ -248,9 +259,6 @@ export default function MapPage() {
       />
       {mode === 'map' && (
         <>
-          <Button variant="ghost" size="sm" onClick={toggle3D} aria-pressed={is3D} icon={<Icon name="cube" size={16} />} className="bg-paper-raised">
-            3D
-          </Button>
           <Button variant="ghost" size="sm" onClick={locate} icon={<Icon name="locate" size={16} />} className="bg-paper-raised">
             <span className="sr-only sm:not-sr-only">Near me</span>
           </Button>
@@ -277,6 +285,7 @@ export default function MapPage() {
           fallback={<div className="mt-2">{panel}</div>}
         >
           {!desktop && <div className="absolute left-1 right-[64px] top-1 z-10">{controls}</div>}
+          <PerspectiveToggle value={is3D} onChange={setPerspective} className="absolute bottom-[104px] right-1 lg:bottom-auto lg:right-[66px] lg:top-[10px]" />
           <Legend />
         </MapView>
       ) : (
@@ -325,11 +334,12 @@ function Legend() {
     <details className="absolute bottom-[104px] left-1 z-10 max-w-[240px] rounded-sm border border-hair bg-paper-raised text-sm lg:bottom-2 lg:left-2">
       <summary className="flex min-h-touch cursor-pointer items-center px-2">Legend</summary>
       <ul className="flex flex-col gap-0.5 px-2 pb-2">
-        <li className="flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2 border-paper bg-signal" aria-hidden />Critical barrier</li>
-        <li className="flex items-center gap-1"><span className="h-[14px] w-[14px] rounded-full border-2 border-signal bg-paper-raised" aria-hidden />High</li>
-        <li className="flex items-center gap-1"><span className="h-[12px] w-[12px] rounded-full bg-ink" aria-hidden />Medium</li>
-        <li className="flex items-center gap-1"><span className="h-[10px] w-[10px] rounded-full border-2 border-ink bg-paper-raised" aria-hidden />Low</li>
-        <li className="flex items-center gap-1"><span className="h-[10px] w-[10px] rounded-full border-2 border-muted bg-paper-raised" aria-hidden />Resolved</li>
+        <li className="flex items-center gap-1"><span className="h-[12px] w-[12px] rounded-full bg-signal ring-2 ring-signal/30" aria-hidden />Critical barrier (fast pulse)</li>
+        <li className="flex items-center gap-1"><span className="h-[12px] w-[12px] rounded-full border-[3px] border-signal bg-paper-raised" aria-hidden />High</li>
+        <li className="flex items-center gap-1"><span className="h-[10px] w-[10px] rounded-full bg-warn" aria-hidden />Medium</li>
+        <li className="flex items-center gap-1"><span className="h-[10px] w-[10px] rounded-full bg-muted" aria-hidden />Low</li>
+        <li className="flex items-center gap-1"><span className="h-[14px] w-[14px] rounded-full border border-dashed border-ink" aria-hidden />Dashed ring: not yet verified</li>
+        <li className="flex items-center gap-1"><span className="flex h-[14px] w-[14px] items-center justify-center rounded-full border border-ok text-ok" aria-hidden><Icon name="check" size={10} /></span>Resolved</li>
         <li className="flex items-center gap-1"><span className="h-[6px] w-[6px] rounded-full border border-muted bg-paper-raised" aria-hidden />Place (zoom in to see)</li>
       </ul>
     </details>
