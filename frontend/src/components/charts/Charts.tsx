@@ -154,15 +154,14 @@ export function HBarChart({ rows, title, format = (v: number) => String(v), acce
       <figcaption className="sr-only">{title}</figcaption>
       <dl ref={ref} className="flex flex-col">
         {rows.map((r, i) => (
-          <div key={r.key} className="border-t border-hair py-1">
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-sm">{r.label}</dt>
-              <dd className="tabular whitespace-nowrap font-mono text-xs">
-                {format(r.value)}
-                {r.note && <span className="ml-1 text-muted">{r.note}</span>}
-              </dd>
-            </div>
-            <dd className="relative mt-0.5 h-[8px] bg-hair" aria-hidden>
+          // dt/dd must be direct children of the row div, so the layout is a grid rather than a nested flex.
+          <div key={r.key} className="grid grid-cols-[1fr_auto] items-baseline gap-x-2 border-t border-hair py-1">
+            <dt className="text-sm">{r.label}</dt>
+            <dd className="tabular whitespace-nowrap font-mono text-xs">
+              {format(r.value)}
+              {r.note && <span className="ml-1 text-muted">{r.note}</span>}
+            </dd>
+            <dd className="relative col-span-2 mt-0.5 h-[8px] bg-hair" aria-hidden>
               <motion.span
                 className={cx('absolute inset-y-0 left-0 origin-left', r.key === accentKey ? 'bg-signal' : 'bg-ink')}
                 style={{ width: `${(r.value / max) * 100}%` }}

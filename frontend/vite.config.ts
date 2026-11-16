@@ -4,7 +4,11 @@ import react from '@vitejs/plugin-react'
 
 const apiTarget = process.env.VITE_API_PROXY ?? 'http://localhost:8000'
 
+// GitHub project pages live under /<repo>/; set VITE_BASE_PATH=/<repo>/ for that build.
+const base = process.env.VITE_BASE_PATH ?? '/'
+
 export default defineConfig({
+  base: base.endsWith('/') ? base : `${base}/`,
   plugins: [react()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

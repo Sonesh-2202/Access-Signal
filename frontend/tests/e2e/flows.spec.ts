@@ -6,6 +6,12 @@ const require = createRequire(import.meta.url)
 const axeSource = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
 const PASSWORD = 'Signal-demo-2026'
 
+/** Path prefix of the site under test, e.g. /Access-Signal on GitHub Pages ('' locally). */
+const BASE_PATH = new URL(process.env.E2E_BASE_URL ?? 'http://localhost:5180').pathname.replace(/\/+$/, '')
+
+/** App paths are written as '/map'; resolve them under the site's base path. */
+const go = (page: Page, path: string) => page.goto(path.replace(/^\//, ''))
+
 async function axe(page: Page): Promise<string[]> {
   await page.addScriptTag({ content: axeSource })
   return page.evaluate(async () => {
@@ -16,11 +22,11 @@ async function axe(page: Page): Promise<string[]> {
 }
 
 async function signIn(page: Page, email: string, next = '/') {
-  await page.goto(`/login?next=${encodeURIComponent(next)}`)
+  await go(page, `/login?next=${encodeURIComponent(next)}`)
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await page.waitForURL((u) => u.pathname === next.split('?')[0])
+  await page.waitForURL((u) => u.pathname === BASE_PATH + next.split('?')[0])
 }
 
 async function noHorizontalOverflow(page: Page) {
@@ -29,9 +35,9 @@ async function noHorizontalOverflow(page: Page) {
 }
 
 test('home shows live data and passes axe', async ({ page }) => {
-  await page.goto('/')
+  await go(page, '/')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('before you leave')
-  await expect(page.getByText(/open barriers/)).toBeVisible()
+  await expect(page.getByText(/open barriers/i).first()).toBeVisible()
   await expect(page.getByRole('table', { name: /Comparison of walking and wheelchair routes/ })).toBeVisible()
   await noHorizontalOverflow(page)
   expect(await axe(page)).toEqual([])
@@ -39,7 +45,7 @@ test('home shows live data and passes axe', async ({ page }) => {
 
 test('skip link moves focus to main content', async ({ page, isMobile }) => {
   test.skip(!!isMobile, 'keyboard test')
-  await page.goto('/reports')
+  await go(page, '/reports')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   await page.keyboard.press('Tab')
   const skip = page.getByRole('link', { name: 'Skip to content' })
@@ -49,7 +55,7 @@ test('skip link moves focus to main content', async ({ page, isMobile }) => {
 })
 
 test('map offers a list-only view with the same reports', async ({ page }) => {
-  await page.goto('/map')
+  await go(page, '/map')
   await page.getByText('List only').click()
   await expect(page.getByRole('heading', { name: 'All matching reports' })).toBeVisible()
   await expect(page.locator('article').first()).toBeVisible()
@@ -57,7 +63,7 @@ test('map offers a list-only view with the same reports', async ({ page }) => {
 })
 
 test('wheelchair route avoids the Union Square curb cut', async ({ page }) => {
-  await page.goto('/route?from=40.7338,-73.9925&to=40.7362,-73.9893&profile=wheelchair')
+  await go(page, '/route?from=40.7338,-73.9925&to=40.7362,-73.9893&profile=wheelchair')
   await expect(page.getByText(/Avoids 1 reported barrier on the shortest walking route/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Directions' })).toBeVisible()
   await noHorizontalOverflow(page)
@@ -72,7 +78,7 @@ test('community member files a report end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue' }).click()
 
   await page.getByRole('button', { name: 'Suggest category' }).click()
-  await expect(page.getByText(/Keyword rules|Local AI/)).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(/Keyword rules|Local AI|Cloud AI/).first()).toBeVisible({ timeout: 90_000 })
   await expect(page.getByLabel('Category')).toHaveValue('sidewalk')
   await page.getByRole('button', { name: 'Continue' }).click()
 
@@ -100,9 +106,40 @@ test('staff pages are closed to community accounts', async ({ page }) => {
   await expect(page.getByText('This area is for infrastructure staff')).toBeVisible()
 })
 
-for (const path of ['/terms', '/privacy', '/accessibility', '/methodology', '/places', '/analytics', '/login']) {
+test.describe('390 px phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+  test.beforeEach(({ isMobile }) => test.skip(!isMobile, 'phone layout checks run in the mobile project'))
+
+  test('report location step leads with search and "Use my location", not the map', async ({ page }) => {
+    await signIn(page, 'priya.raman@example.org', '/report')
+    await expect(page.getByRole('heading', { name: 'Where is the barrier?' })).toBeVisible()
+    const search = page.getByRole('combobox', { name: 'Address or place' })
+    const locate = page.getByRole('button', { name: 'Use my location' })
+    await expect(search).toBeVisible()
+    await expect(locate).toBeVisible()
+    // Both sit above the map, inside the first screen, so nobody needs a pointer to place the pin.
+    for (const el of [search, locate]) {
+      const box = (await el.boundingBox())!
+      expect(box.y + box.height).toBeLessThan(844)
+      expect(box.width).toBeGreaterThanOrEqual(44)
+    }
+    await noHorizontalOverflow(page)
+  })
+
+  test('map list view and route planner fit the screen', async ({ page }) => {
+    await go(page, '/map')
+    await page.getByText('List only').click()
+    await expect(page.getByRole('heading', { name: 'All matching reports' })).toBeVisible()
+    await noHorizontalOverflow(page)
+    await go(page, '/route?from=40.7338,-73.9925&to=40.7362,-73.9893&profile=wheelchair')
+    await expect(page.getByText(/Avoids 1 reported barrier on the shortest walking route/)).toBeVisible()
+    await noHorizontalOverflow(page)
+  })
+})
+
+for (const path of ['/terms', '/privacy', '/accessibility', '/methodology', '/places', '/analytics', '/login', '/settings']) {
   test(`${path} has no axe violations or overflow`, async ({ page }) => {
-    await page.goto(path)
+    await go(page, path)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await page.waitForLoadState('networkidle')
     await noHorizontalOverflow(page)

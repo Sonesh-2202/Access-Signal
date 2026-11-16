@@ -6,7 +6,9 @@ import { defineConfig, devices } from '@playwright/test'
  *   cd frontend && npm run test:e2e            # starts Vite itself unless E2E_BASE_URL is set
  * The report-submission test writes to the database; reseed afterwards for a clean demo.
  */
-const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5180'
+// Against the live demo: E2E_BASE_URL=https://<owner>.github.io/<repo>/ npm run test:e2e
+// Tests navigate with relative paths, so the trailing slash keeps the sub-path.
+const baseURL = (process.env.E2E_BASE_URL ?? 'http://localhost:5180').replace(/\/?$/, '/')
 
 export default defineConfig({
   testDir: './tests/e2e',
