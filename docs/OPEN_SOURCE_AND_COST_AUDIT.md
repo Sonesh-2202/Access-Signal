@@ -1,12 +1,19 @@
 # Open source and cost audit
 
-Policy: no paid services, no API keys, no proprietary runtime dependencies.
+Policy: no paid services and no proprietary runtime dependencies. Local mode needs no API keys. The hosted demo uses free tiers only (listed below); none of them is required to run the app.
 
 ## Runtime services
 
 | Service | Used for | Cost | Key needed | Notes |
 |---|---|---|---|---|
 | LM Studio (local) | AI classification | $0 | No | Runs on your machine. Optional; keyword fallback built in |
+| Ollama (local) | AI classification | $0 | No | MIT. Alternative to LM Studio, `AI_PROVIDER=ollama` |
+| Google Gemini API, free tier | Hosted demo AI (text + photos) | $0 | Yes | Free-tier content may be used to improve Google products; disclosed in the report form and privacy page |
+| GroqCloud, free plan | Hosted demo AI (text) | $0 | Yes | Optional second tier |
+| Nebius Token Factory | Hosted demo AI | Existing credits | Yes | Optional; never the default |
+| Supabase, free plan | Hosted Postgres and photo storage | $0 | Yes (server-side) | Pauses after 7 idle days |
+| Render, free web service | Hosted API | $0 | No (account) | Sleeps after 15 idle minutes |
+| GitHub Pages and Actions | Hosted frontend, keep-warm ping, seed job | $0 | No | Public repository |
 | Gemma 4 12B QAT GGUF | Model | $0 | No | Gemma terms of use apply |
 | OpenFreeMap | Vector tiles and fonts | $0 | No | Replaceable via `VITE_MAP_STYLE_URL` |
 | tile.openstreetmap.org | Optional raster tiles | $0 | No | Subject to the OSMF tile usage policy; light use only |

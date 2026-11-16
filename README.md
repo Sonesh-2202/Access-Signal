@@ -15,14 +15,14 @@ Community-reported accessibility conditions for Midtown and Lower Manhattan, che
 ![MapLibre](https://img.shields.io/badge/MapLibre_GL-5-1C1B19?style=flat-square&logo=maplibre&logoColor=F4F1EA)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-1C1B19?style=flat-square&logo=fastapi&logoColor=F4F1EA)
 ![PostGIS](https://img.shields.io/badge/PostgreSQL-PostGIS-1C1B19?style=flat-square&logo=postgresql&logoColor=F4F1EA)
-![Tests](https://img.shields.io/badge/tests-76_passing-A8360F?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-139_passing-A8360F?style=flat-square)
 ![Cost](https://img.shields.io/badge/running_cost-%240-A8360F?style=flat-square)
 ![License](https://img.shields.io/badge/code-MIT-1C1B19?style=flat-square)
 ![Data](https://img.shields.io/badge/data-OpenStreetMap_ODbL-1C1B19?style=flat-square)
 
 <br>
 
-[Quick start](#quick-start) · [Features](#what-it-does) · [Architecture](#architecture) · [Tests](#tests) · [Docs](#documentation)
+[Live demo](docs/DEPLOYMENT.md#judge-quick-demo) · [Quick start](#quick-start) · [Features](#what-it-does) · [Architecture](#architecture) · [Tests](#tests) · [Docs](#documentation)
 
 <br>
 
@@ -62,8 +62,8 @@ Each report carries a confidence score built from evidence, independent corrobor
 </td>
 <td width="50%" valign="top">
 
-### Local AI, no cloud
-Photos and text are classified by a Gemma model running in LM Studio on your own machine. When the model is offline, a keyword classifier takes over and the interface says so.
+### Local AI first, free cloud for the demo
+Photos and text are classified by Gemma running in Ollama or LM Studio on your own machine. The hosted demo uses free Gemini or Groq tiers instead, and judges can paste their own key. When no model answers, a keyword classifier takes over, and every result says which one produced it.
 
 </td>
 </tr>
@@ -116,19 +116,37 @@ flowchart LR
         AI["AI classifier"]
     end
 
-    DB[("SQLite or<br/>PostgreSQL + PostGIS")]
-    LM["LM Studio<br/>Gemma 4 12B<br/>localhost:1234"]
+    subgraph Local["Local mode (default)"]
+        DB[("SQLite or<br/>PostgreSQL + PostGIS")]
+        Disk[("Disk uploads")]
+        LM["Ollama gemma4:12b :11434<br/>or LM Studio :1234"]
+    end
+
+    subgraph Hosted["Hosted demo (free tiers)"]
+        Pages["GitHub Pages<br/>static frontend"]
+        Supa[("Supabase<br/>Postgres + PostGIS")]
+        Bucket[("Supabase Storage<br/>private bucket, signed URLs")]
+        Cloud["Gemini (text + photos)<br/>then Groq (text)<br/>then Nebius (optional)"]
+    end
+
+    KW["Keyword classifier<br/>always the last tier"]
     OSM["OpenStreetMap<br/>24,527 path segments<br/>918 places"]
 
     UI --> Map
     UI --> Three
     UI -- "/api" --> Routes
+    Pages -. "serves" .-> UI
     Routes --> Route
     Routes --> Intel
     Routes --> Agents
     Routes --> AI
     AI -- "OpenAI-compatible" --> LM
+    AI -- "OpenAI-compatible,<br/>server key or BYOK" --> Cloud
+    AI --> KW
     Routes --> DB
+    Routes --> Disk
+    Routes -.-> Supa
+    Routes -.-> Bucket
     Route --> OSM
 ```
 
@@ -139,7 +157,8 @@ flowchart LR
 | 3D | Three.js with React Three Fiber | Used selectively, with a 2D fallback when WebGL is missing |
 | Backend | FastAPI, SQLAlchemy 2, Pydantic | Typed endpoints and generated OpenAPI docs |
 | Routing | NetworkX A* with per-profile costs | Transparent weights, so every route can explain itself |
-| AI | LM Studio (OpenAI-compatible API) | Runs locally. Keyword fallback keeps the app working offline |
+| AI | Ollama or LM Studio locally; Gemini, Groq, Nebius when hosted | One OpenAI-compatible client with one prompt and schema for every tier. Keyword fallback keeps the app working offline |
+| Hosting | GitHub Pages, Render, Supabase (free tiers) | $0 demo. Auth stays in FastAPI; Supabase is Postgres and Storage only. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Data | OpenStreetMap via Overpass (ODbL) | Real pedestrian network, not a synthetic grid |
 
 ## Quick start
@@ -184,11 +203,19 @@ cd backend; .\.venv\Scripts\python.exe -m scripts.seed_demo --reset
 </details>
 
 <details>
-<summary><b>Local AI (optional)</b></summary>
+<summary><b>Local AI (optional): Ollama or LM Studio</b></summary>
 
 <br>
 
-Load the Gemma 4 12B model in LM Studio and start its local server (default `http://localhost:1234/v1`). The backend detects it automatically. Until then the keyword classifier handles suggestions, and the UI labels the result as keyword-based. Settings are in `.env.example` (`AI_API_BASE`, `AI_MODEL`).
+Either server works; both speak the OpenAI-compatible API. Pick one with `AI_PROVIDER` in `.env`.
+
+| | Ollama | LM Studio (default) |
+|---|---|---|
+| Get the model | `ollama pull gemma4:12b` | Load *Gemma 4 12B* and start the local server |
+| `.env` | `AI_PROVIDER=ollama` | nothing, or `AI_PROVIDER=lmstudio` |
+| Default URL and model | `http://localhost:11434/v1`, `gemma4:12b` | `http://localhost:1234/v1`, `gemma-4-12b-it-qat-gguf` |
+
+Set `AI_API_BASE` / `AI_MODEL` only to override those defaults. At startup the API logs whether the model was found. Until it is, the keyword classifier handles suggestions and the UI labels them *Keyword rules, AI offline*. With Ollama 0.40 and `gemma4:12b` on an RTX 3060, a photo is classified in about 5 seconds. Photo and thinking-mode details are in [DEPLOYMENT.md](docs/DEPLOYMENT.md#self-hoster-quick-start-with-ollama).
 
 </details>
 
@@ -202,7 +229,7 @@ docker compose up --build
 docker compose exec backend python -m scripts.seed_demo --reset
 ```
 
-Then open http://localhost:3000. The Docker files have not been run yet, so treat this path as untested. See [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+Then open http://localhost:3000. The Postgres path (Alembic migrations and seeding on `postgis/postgis:16-3.4`) is verified; the compose file as a whole has not been run end to end. See [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 </details>
 
@@ -210,9 +237,9 @@ Then open http://localhost:3000. The Docker files have not been run yet, so trea
 
 | Suite | Count | Command | Covers |
 |---|---:|---|---|
-| Backend | 33 | `pytest` | API flows, issue state machine, evidence privacy, property-based routing costs (Hypothesis) |
-| Frontend unit | 16 | `npm test` | Form controls, status marks, password rules, legal pages, route guards, axe checks |
-| End-to-end | 27 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 8 pages, overflow at desktop and mobile widths |
+| Backend | 71 | `pytest` | API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), every AI provider against a fake OpenAI server, BYOK, CORS, deploy config |
+| Frontend unit | 37 | `npm test` | Form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling |
+| End-to-end | 31 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 9 pages, overflow at desktop, mobile and 390 px. Point `E2E_BASE_URL` at the live site to run it there |
 
 The E2E suite files a real report and edits an issue, so reseed afterwards.
 
@@ -228,11 +255,12 @@ The E2E suite files a real report and edits an issue, so reseed afterwards.
 | [Access Monitor](docs/ACCESS_MONITOR_AGENT.md) | Agent contracts, permissions and tool definitions |
 | [Open source and cost audit](docs/OPEN_SOURCE_AND_COST_AUDIT.md) | Licences for every dependency and service |
 | [Hackathon strategy](docs/HACKATHON_STRATEGY.md) | Five-minute demo script |
+| [Deployment](docs/DEPLOYMENT.md) | Judge demo script, Ollama quick start, hosting on Pages + Render + Supabase, free-tier facts |
 | [Project status](PROJECT_STATUS.md) | Task-by-task status against the plan, and what's unverified |
 
 ## Principles
 
-- **Zero running cost.** No API keys or paid services. The AI runs on local hardware.
+- **Zero running cost.** Local mode needs no keys or accounts. The hosted demo uses free tiers only; judges may bring their own AI key.
 - **Explainable by default.** Every score, route and hotspot shows its reasons.
 - **No single channel.** The map always has a list beside it, charts have tables, and routes have written directions.
 - **Human decisions stay human.** Agents can add notes and move reports into review, but only staff can confirm, assign or resolve.

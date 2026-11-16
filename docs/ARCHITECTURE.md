@@ -8,7 +8,7 @@ Browser (React 18 + Vite)
                                                          ▼
 FastAPI (backend/app)
   ├─ api/routes        auth · reports · evidence · places · routing · issues · analytics · agents · meta
-  ├─ services/ai       LM Studio client (OpenAI-compatible) + keyword fallback
+  ├─ services/ai       provider chain (Ollama, LM Studio, Gemini, Groq, Nebius) + keyword fallback
   ├─ services/intelligence   duplicates · confidence · hotspots (DBSCAN)
   ├─ services/routing  NetworkX graph in memory, per-profile costs, live barriers
   ├─ services/agents   Access Monitor (5 triage agents)
@@ -37,7 +37,7 @@ Tables match the plan (`users`, `reports`, `evidence`, `places`, `place_accessib
 ## Request flow: a new report
 
 1. Client uploads photos/voice to `POST /api/evidence`. Files are sniffed by magic bytes (client MIME is ignored), JPEG EXIF is stripped, and the file is stored as an unattached draft owned by the uploader.
-2. `POST /api/reports/classify` sends text + photos to LM Studio with a JSON-schema response format. Invalid output falls through to plain JSON, then text-only, then the keyword classifier.
+2. `POST /api/reports/classify` sends text + photos to the configured AI tier (`AI_PROVIDER`: Ollama or LM Studio locally, Gemini → Groq → Nebius when hosted, or a bring-your-own-key provider from the request) with a JSON-schema response format. Each tier tries photos + schema, then text, then without the schema; a tier that fails hands over to the next, and the keyword classifier is always last. The result records which tier answered and why higher tiers didn't. See `app/services/ai/providers.py` and [DEPLOYMENT.md](DEPLOYMENT.md#decisions).
 3. `POST /api/reports/duplicates` returns nearby candidates (50 m, 30 days).
 4. `POST /api/reports` validates category and service area, links the nearest place within 40 m, attaches evidence, computes confidence, opens an issue (or records a corroboration on the original), and updates the place profile.
 5. Routing picks the report up on the next request: barriers are mapped to edges within 25 m each time a route is computed.
