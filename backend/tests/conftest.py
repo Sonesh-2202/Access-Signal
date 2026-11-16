@@ -60,14 +60,17 @@ def grid_edges(blocked: set[tuple[str, str]] = frozenset(), steps: set[tuple[str
 def fresh_db():
     from app.api.dependencies import classify_limiter
     from app.api.routes.auth import limiter
+    from app.services.storage import set_storage
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     reset_graph()
     limiter.reset()
     classify_limiter.reset()
+    set_storage(None)
     yield
     reset_graph()
+    set_storage(None)
 
 
 @pytest.fixture

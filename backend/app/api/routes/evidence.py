@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import current_user
@@ -37,7 +37,11 @@ async def upload_evidence(
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from None
     if mime == "image/jpeg":
         data = strip_jpeg_metadata(data)
-    key = get_storage().save(data, ext)
+    # Sniffing and metadata stripping above run on every backend, before any bytes leave this process.
+    try:
+        key = get_storage().save(data, ext, mime)
+    except httpx.HTTPError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "File storage is unavailable. Try again shortly.") from None
     ev = Evidence(
         type=kind, file_path=key, mime_type=mime,
         transcription=(transcription or "").strip() or None,
@@ -50,19 +54,19 @@ async def upload_evidence(
     return evidence_out(ev)
 
 
-@router.get("/{evidence_id}/file")
-def evidence_file(evidence_id: str, db: Session = Depends(get_db)) -> FileResponse:
+@router.get("/{evidence_id}/file", response_class=Response)
+def evidence_file(evidence_id: str, db: Session = Depends(get_db)) -> Response:
     ev = db.get(Evidence, evidence_id)
     # Unattached uploads are private drafts; the client previews them locally.
+    # These checks run before the storage backend is touched, so no signed URL is ever
+    # issued for a draft or for evidence on a deleted report.
     if ev is None or ev.file_path is None or ev.report_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evidence not found")
     if ev.report and ev.report.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evidence not found")
     try:
-        path = get_storage().path_for(ev.file_path)
+        return get_storage().response(ev.file_path, ev.mime_type)
     except FileNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evidence not found") from None
-    if not path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evidence file missing")
-    return FileResponse(path, media_type=ev.mime_type, headers={"Cache-Control": "public, max-age=86400",
-                                                                "X-Content-Type-Options": "nosniff"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evidence file missing") from None
+    except httpx.HTTPError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "File storage is unavailable") from None
