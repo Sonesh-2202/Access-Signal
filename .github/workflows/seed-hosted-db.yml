@@ -1,0 +1,45 @@
+# One-off job: create the schema and load the demo data (routing graph, places,
+# demo accounts) into the hosted Supabase database, and make sure the private
+# evidence bucket exists. Safe to re-run: seeding is skipped when data is present.
+#
+# Repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   DATABASE_URL           Supabase Session pooler connection string
+#   SUPABASE_URL           https://<project-ref>.supabase.co
+#   SUPABASE_SERVICE_KEY   service_role key (server-side only)
+name: Seed hosted database
+
+on:
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: "Drop all tables and reseed (deletes every report filed on the demo)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    environment: hosted-demo
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r requirements-postgres.txt
+      - name: Storage bucket
+        if: env.SUPABASE_URL != ''
+        run: python -m scripts.supabase_setup
+      - name: Migrate and seed
+        run: python -m scripts.seed_demo ${{ inputs.reset && '--reset' || '' }}

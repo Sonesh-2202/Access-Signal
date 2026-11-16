@@ -2,7 +2,7 @@
 # Then seed once:           docker compose exec backend python -m scripts.seed_demo --reset
 # App: http://localhost:3000   API docs: http://localhost:3000/api/docs
 #
-# LM Studio runs on the host; the backend reaches it via host.docker.internal.
+# LM Studio or Ollama runs on the host; the backend reaches it via host.docker.internal.
 
 services:
   db:
@@ -26,6 +26,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://accesssignal:accesssignal@db:5432/accesssignal
       SECRET_KEY: ${SECRET_KEY:-change-me}
+      # For Ollama on the host: AI_PROVIDER=ollama AI_API_BASE=http://host.docker.internal:11434/v1
+      AI_PROVIDER: ${AI_PROVIDER:-lmstudio}
       AI_API_BASE: ${AI_API_BASE:-http://host.docker.internal:1234/v1}
       AI_MODEL: ${AI_MODEL:-gemma-4-12b-it-qat-gguf}
       UPLOAD_DIR: /data/uploads

@@ -22,7 +22,9 @@ def _make_engine(url: str):
             cur.close()
 
         return engine
-    return create_engine(url, pool_pre_ping=True)
+    # Small pool: free Postgres tiers (Supabase's session pooler) cap client connections,
+    # and the free web host runs a single worker. Recycle before idle poolers drop us.
+    return create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=2, pool_recycle=300)
 
 
 engine = _make_engine(get_settings().database_url)

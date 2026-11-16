@@ -1,0 +1,36 @@
+# Keep the free API host (and the Supabase project behind it) awake during judging.
+# Render's free tier sleeps after 15 minutes without traffic; Supabase pauses free
+# projects after 7 days idle. /api/health touches both.
+#
+# Off by default. To enable, set repository variables:
+#   KEEP_WARM=true
+#   API_HEALTH_URL=https://accesssignal-api.onrender.com/api/health
+# Turn it off after the hackathon so the instance hours stay within the free 750/month.
+# GitHub may delay scheduled runs by several minutes; 10-minute spacing leaves margin.
+name: Keep demo API warm
+
+on:
+  schedule:
+    # Every 10 minutes, 13:00-04:59 UTC (09:00-00:59 US Eastern). Adjust to the judging window.
+    - cron: "*/10 0-4,13-23 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: github.event_name == 'workflow_dispatch' || vars.KEEP_WARM == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Ping /api/health
+        env:
+          URL: ${{ vars.API_HEALTH_URL }}
+        run: |
+          if [ -z "$URL" ]; then echo "::error::Set the API_HEALTH_URL repository variable"; exit 1; fi
+          # A cold start takes about a minute; allow for it and retry once.
+          for i in 1 2; do
+            if curl -fsS --max-time 120 "$URL"; then echo; exit 0; fi
+            sleep 20
+          done
+          echo "::warning::Health check failed twice"; exit 1

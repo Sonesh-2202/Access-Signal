@@ -1,0 +1,52 @@
+# Render Blueprint for the hosted demo API (free web service).
+# Dashboard: New > Blueprint > pick this repo. Fill the `sync: false` values when prompted.
+# Full walkthrough: docs/DEPLOYMENT.md
+services:
+  - type: web
+    name: accesssignal-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements-postgres.txt
+    # Migrations are idempotent and fast, so they run on each start. Seeding is a
+    # separate one-off job (see the "Seed hosted database" workflow), never on boot.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --no-server-header
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTO_CREATE_TABLES
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      # Supabase > Connect > Session pooler (IPv4). postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: AI_PROVIDER
+        value: cloud
+      - key: AI_CLOUD_ORDER
+        value: gemini,groq,nebius
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: evidence
+      # Origins only, no path. Add a custom domain here if you use one.
+      - key: CORS_ORIGINS
+        value: https://sonesh-2202.github.io,http://localhost:5173
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: DEMO_MODE
+        value: "true"

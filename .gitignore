@@ -1,4 +1,10 @@
 .env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+secrets/
 node_modules/
 dist/
 .venv/

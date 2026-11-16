@@ -1,0 +1,62 @@
+# Build the frontend and publish it to GitHub Pages.
+# Settings > Pages > Source: GitHub Actions.
+# Settings > Secrets and variables > Actions > Variables:
+#   VITE_API_BASE   https://accesssignal-api.onrender.com   (public URL, not a secret)
+# Nothing secret goes into the client build: every VITE_ value ends up in public JS.
+name: Deploy frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Build
+        env:
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          # Project pages are served from /<repo>/. Set PAGES_BASE_PATH=/ for a custom domain.
+          VITE_BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+        run: |
+          if [ -z "$VITE_API_BASE" ]; then echo "::warning::VITE_API_BASE is not set; the site will run on the bundled demo dataset only."; fi
+          npx vite build
+          # SPA fallback: Pages serves 404.html for unknown paths, so /map, /reports, ...
+          # load the app on refresh and the router takes over.
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

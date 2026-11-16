@@ -1,10 +1,16 @@
 ﻿"""Load the routing graph, OSM places and the Manhattan demo narrative.
 
-    python -m scripts.seed_demo            # seed if the database is empty
+    python -m scripts.seed_demo            # seed if the database is empty, otherwise do nothing
     python -m scripts.seed_demo --reset    # drop everything and reseed (demo reset)
 
-Demo accounts share the password in DEMO_PASSWORD (default below). They exist for
-local demos only; never run this against a real deployment."""
+Idempotent: the whole seed runs in one transaction, so a failed run leaves the
+database empty and the next run starts clean; a completed run is detected and
+skipped. Run it once per database as a one-off job (locally, or the
+"Seed hosted database" GitHub Actions workflow for Supabase), never on boot.
+
+Demo accounts share the password in DEMO_PASSWORD (default below). They are meant
+for local demos and the public hackathon demo, where the credentials are published
+on purpose and the data is disposable. Never run this against a database with real users."""
 
 import argparse
 import json
@@ -15,7 +21,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -120,7 +126,7 @@ def load_graph(db) -> dict:
         })
     for i in range(0, len(rows), 2000):
         db.execute(insert(PathEdge), rows[i:i + 2000])
-    db.commit()
+    db.flush()  # committed with everything else at the end of main()
     print(f"  {len(rows)} path edges")
     return g
 
@@ -303,6 +309,30 @@ def background(db, u: dict[str, User], graph: dict) -> None:
             add_issue(db, r, [])
 
 
+def ensure_schema(reset: bool) -> None:
+    """SQLite (local default): create_all, as before. Postgres (docker-compose, Supabase):
+    Alembic, so the app's `alembic upgrade head` on boot finds the schema it expects."""
+    if engine.dialect.name == "sqlite":
+        if reset:
+            print("Dropping tables...")
+            Base.metadata.drop_all(bind=engine)
+        init_db()
+        return
+    from alembic import command
+    from alembic.config import Config
+
+    backend = Path(__file__).resolve().parents[1]
+    cfg = Config(str(backend / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend / "migrations"))
+    if reset:
+        print("Dropping tables...")
+        Base.metadata.drop_all(bind=engine)
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    print("Applying migrations...")
+    command.upgrade(cfg, "head")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--reset", action="store_true", help="drop all tables and reseed")
@@ -310,10 +340,7 @@ def main() -> int:
 
     from app import models  # noqa: F401
 
-    if args.reset:
-        print("Dropping tables...")
-        Base.metadata.drop_all(bind=engine)
-    init_db()
+    ensure_schema(args.reset)
     reset_graph()
     db = SessionLocal()
     try:

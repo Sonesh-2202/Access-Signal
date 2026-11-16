@@ -15,9 +15,19 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def include_object(obj, name, type_, reflected, compare_to):
+    # PostGIS images and Supabase ship their own tables (tiger geocoder, topology,
+    # spatial_ref_sys). Only compare tables this app defines.
+    if type_ == "table" and reflected and compare_to is None:
+        return False
+    if type_ == "index" and reflected and compare_to is None and getattr(obj, "table", None) is not None:
+        return obj.table.name in target_metadata.tables
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(url=config.get_main_option("sqlalchemy.url"), target_metadata=target_metadata,
-                      literal_binds=True, render_as_batch=True)
+                      literal_binds=True, render_as_batch=True, include_object=include_object)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -27,7 +37,8 @@ def run_migrations_online() -> None:
                                      poolclass=pool.NullPool)
     with connectable.connect() as connection:
         # render_as_batch lets ALTER TABLE work on SQLite.
-        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
+        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True,
+                          include_object=include_object)
         with context.begin_transaction():
             context.run_migrations()
 
