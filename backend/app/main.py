@@ -7,7 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import agents, analytics, auth, evidence, issues, meta, places, reports, routing
+from app.api.routes import analytics, auth, chat, evidence, issues, meta, places, reports, routing
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.services.ai.classifier import log_startup_status
@@ -47,21 +47,27 @@ app = FastAPI(
         {"name": "routing", "description": "Accessibility-aware pedestrian routing"},
         {"name": "issues", "description": "Infrastructure manager workflow (staff only)"},
         {"name": "analytics", "description": "Trends, hotspots and coverage"},
-        {"name": "agents", "description": "Access Monitor triage agents (staff only)"},
+        {"name": "chat", "description": "Read-only AI assistant over public reports, places and routes"},
         {"name": "meta", "description": "Health, taxonomy and AI status"},
     ],
 )
 
-# Endpoints that may call a model take small JSON bodies only.
-_AI_PATHS = ("/api/reports/classify", "/api/agents/")
+# Endpoints that call a model take small JSON bodies only. The chat cap is larger because
+# a conversation carries its history with it.
+_AI_PATHS = ("/api/reports/classify",)
 
 
 @app.middleware("http")
 async def limit_body_size(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH"):
         s = get_settings()
-        small = request.url.path.startswith(_AI_PATHS)
-        cap = s.classify_max_body_bytes if small else s.max_file_size_bytes + 64 * 1024
+        path = request.url.path
+        if path.startswith("/api/chat"):
+            small, cap = True, s.chat_max_body_bytes
+        elif path.startswith(_AI_PATHS):
+            small, cap = True, s.classify_max_body_bytes
+        else:
+            small, cap = False, s.max_file_size_bytes + 64 * 1024
         length = request.headers.get("content-length")
         if length is None:
             if small or "chunked" in request.headers.get("transfer-encoding", ""):
@@ -92,5 +98,5 @@ app.add_middleware(
 )
 
 
-for r in (auth, meta, evidence, reports, places, routing, issues, analytics, agents):
+for r in (auth, meta, evidence, reports, places, routing, issues, analytics, chat):
     app.include_router(r.router)

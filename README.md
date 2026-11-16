@@ -15,7 +15,7 @@ Community-reported accessibility conditions for Midtown and Lower Manhattan, che
 ![MapLibre](https://img.shields.io/badge/MapLibre_GL-5-1C1B19?style=flat-square&logo=maplibre&logoColor=F4F1EA)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-1C1B19?style=flat-square&logo=fastapi&logoColor=F4F1EA)
 ![PostGIS](https://img.shields.io/badge/PostgreSQL-PostGIS-1C1B19?style=flat-square&logo=postgresql&logoColor=F4F1EA)
-![Tests](https://img.shields.io/badge/tests-139_passing-A8360F?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-178_passing-A8360F?style=flat-square)
 ![Cost](https://img.shields.io/badge/running_cost-%240-A8360F?style=flat-square)
 ![License](https://img.shields.io/badge/code-MIT-1C1B19?style=flat-square)
 ![Data](https://img.shields.io/badge/data-OpenStreetMap_ODbL-1C1B19?style=flat-square)
@@ -62,8 +62,8 @@ Each report carries a confidence score built from evidence, independent corrobor
 </td>
 <td width="50%" valign="top">
 
-### Local AI first, free cloud for the demo
-Photos and text are classified by Gemma running in Ollama or LM Studio on your own machine. The hosted demo uses free Gemini or Groq tiers instead, and judges can paste their own key. When no model answers, a keyword classifier takes over, and every result says which one produced it.
+### Cloud AI, with a read-only assistant
+Photos and text are classified by a cloud model: Gemini or Groq on the server's free-tier keys, or your own key from Settings. A read-only assistant answers questions about the report, place or route on screen, and cites the records it used. It can't file, change or verify anything. When no cloud model answers, keyword rules take over, and every result says which one produced it.
 
 </td>
 </tr>
@@ -71,7 +71,7 @@ Photos and text are classified by Gemma running in Ollama or LM Studio on your o
 <td width="50%" valign="top">
 
 ### Issues through to repair
-Staff work a priority queue through a seven-stage workflow with an audit trail. A fix only closes after someone nearby confirms it. Five Access Monitor agents handle first-pass triage, as a dry run unless you allow changes.
+Staff work a priority queue through a seven-stage workflow with an audit trail. A fix only closes after someone nearby confirms it. Every status change is recorded with the person who made it.
 
 </td>
 <td width="50%" valign="top">
@@ -106,44 +106,49 @@ flowchart LR
         UI["React 18 + Vite<br/>Tailwind, custom SVG icons"]
         Map["MapLibre GL<br/>vector map, heat, hotspots"]
         Three["Three.js<br/>entrance model, lazy-loaded"]
+        Chat["Chat box<br/>read-only assistant, cites sources"]
     end
 
     subgraph API["FastAPI backend"]
         Routes["REST routes<br/>reports · places · issues · analytics"]
         Route["Routing engine<br/>A* over NetworkX graph"]
         Intel["Intelligence<br/>duplicates · confidence · DBSCAN hotspots"]
-        Agents["Access Monitor<br/>five triage agents"]
-        AI["AI classifier"]
+        AI["AI classifier<br/>BYOK, then cloud tiers, then keyword rules"]
+        ChatAPI["Chat service<br/>POST /api/chat, reads public data only"]
     end
 
-    subgraph Local["Local mode (default)"]
+    subgraph Storage["Storage"]
         DB[("SQLite or<br/>PostgreSQL + PostGIS")]
         Disk[("Disk uploads")]
-        LM["Ollama gemma4:12b :11434<br/>or LM Studio :1234"]
     end
 
     subgraph Hosted["Hosted demo (free tiers)"]
         Pages["GitHub Pages<br/>static frontend"]
         Supa[("Supabase<br/>Postgres + PostGIS")]
         Bucket[("Supabase Storage<br/>private bucket, signed URLs")]
-        Cloud["Gemini (text + photos)<br/>then Groq (text)<br/>then Nebius (optional)"]
     end
 
-    KW["Keyword classifier<br/>always the last tier"]
+    subgraph Cloud["Cloud AI"]
+        CloudAI["Gemini (text + photos)<br/>then Groq (text)<br/>then Nebius (optional)"]
+    end
+
+    KW["Keyword rules<br/>always the last tier"]
     OSM["OpenStreetMap<br/>24,527 path segments<br/>918 places"]
 
     UI --> Map
     UI --> Three
+    UI --> Chat
     UI -- "/api" --> Routes
+    Chat -- "POST /api/chat" --> ChatAPI
     Pages -. "serves" .-> UI
     Routes --> Route
     Routes --> Intel
-    Routes --> Agents
     Routes --> AI
-    AI -- "OpenAI-compatible" --> LM
-    AI -- "OpenAI-compatible,<br/>server key or BYOK" --> Cloud
+    AI -- "OpenAI-compatible,<br/>server key or BYOK" --> CloudAI
+    ChatAPI -- "plain text, no schema" --> CloudAI
     AI --> KW
     Routes --> DB
+    ChatAPI -- "read only" --> DB
     Routes --> Disk
     Routes -.-> Supa
     Routes -.-> Bucket
@@ -157,7 +162,7 @@ flowchart LR
 | 3D | Three.js with React Three Fiber | Used selectively, with a 2D fallback when WebGL is missing |
 | Backend | FastAPI, SQLAlchemy 2, Pydantic | Typed endpoints and generated OpenAPI docs |
 | Routing | NetworkX A* with per-profile costs | Transparent weights, so every route can explain itself |
-| AI | Ollama or LM Studio locally; Gemini, Groq, Nebius when hosted | One OpenAI-compatible client with one prompt and schema for every tier. Keyword fallback keeps the app working offline |
+| AI | Gemini, Groq and Nebius through one OpenAI-compatible client, with a bring-your-own-key option | Classification uses a schema and the taxonomy; the chat assistant uses plain text and never writes. Keyword rules keep the app working with no key |
 | Hosting | GitHub Pages, Render, Supabase (free tiers) | $0 demo. Auth stays in FastAPI; Supabase is Postgres and Storage only. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Data | OpenStreetMap via Overpass (ODbL) | Real pedestrian network, not a synthetic grid |
 
@@ -188,7 +193,7 @@ Open **http://localhost:5173**. On macOS or Linux, run `scripts/setup_dev.sh`.
 | Account | Role | What to see |
 |---|---|---|
 | `priya.raman@example.org` | Community member, wheelchair user | Filing reports, routing |
-| `dana.whitfield@city.example.org` | Infrastructure manager, DOT liaison | Issue queue, workflow, Access Monitor |
+| `dana.whitfield@city.example.org` | Infrastructure manager, DOT liaison | Issue queue and workflow |
 | `marcus.oyelaran@city.example.org` | Infrastructure manager, MTA accessibility | Station elevator outage |
 | `admin@city.example.org` | Admin | Everything |
 
@@ -203,19 +208,19 @@ cd backend; .\.venv\Scripts\python.exe -m scripts.seed_demo --reset
 </details>
 
 <details>
-<summary><b>Local AI (optional): Ollama or LM Studio</b></summary>
+<summary><b>AI keys (optional)</b></summary>
 
 <br>
 
-Either server works; both speak the OpenAI-compatible API. Pick one with `AI_PROVIDER` in `.env`.
+The app runs without any AI key: suggestions come from keyword rules, labelled *Keyword rules, AI offline*, and the assistant is offline. To turn on cloud models, add a key to `.env` at the repository root:
 
-| | Ollama | LM Studio (default) |
-|---|---|---|
-| Get the model | `ollama pull gemma4:12b` | Load *Gemma 4 12B* and start the local server |
-| `.env` | `AI_PROVIDER=ollama` | nothing, or `AI_PROVIDER=lmstudio` |
-| Default URL and model | `http://localhost:11434/v1`, `gemma4:12b` | `http://localhost:1234/v1`, `gemma-4-12b-it-qat-gguf` |
+| Provider | Variable | Get a key | Photos |
+|---|---|---|---|
+| Google Gemini | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) | Yes |
+| Groq | `GROQ_API_KEY` | [GroqCloud console](https://console.groq.com/keys) | No |
+| Nebius (optional) | `NEBIUS_API_KEY` | [Nebius Token Factory](https://tokenfactory.nebius.com/project/api-keys) | Only with `NEBIUS_VISION=true` |
 
-Set `AI_API_BASE` / `AI_MODEL` only to override those defaults. At startup the API logs whether the model was found. Until it is, the keyword classifier handles suggestions and the UI labels them *Keyword rules, AI offline*. With Ollama 0.40 and `gemma4:12b` on an RTX 3060, a photo is classified in about 5 seconds. Photo and thinking-mode details are in [DEPLOYMENT.md](docs/DEPLOYMENT.md#self-hoster-quick-start-with-ollama).
+Set `AI_PROVIDER=cloud` (the default) and restart the API. The startup log lists which keys it found. Anyone can also paste their own key in **Settings**; it stays in that browser tab and is sent only with AI requests. Details and free-tier limits are in [DEPLOYMENT.md](docs/DEPLOYMENT.md#ai-keys-and-free-tiers).
 
 </details>
 
@@ -237,8 +242,8 @@ Then open http://localhost:3000. The Postgres path (Alembic migrations and seedi
 
 | Suite | Count | Command | Covers |
 |---|---:|---|---|
-| Backend | 71 | `pytest` | API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), every AI provider against a fake OpenAI server, BYOK, CORS, deploy config |
-| Frontend unit | 37 | `npm test` | Form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling |
+| Backend | 100 | `pytest` | API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), cloud providers and keyword fallback against a fake OpenAI server, BYOK, the read-only chat (grounding, no writes, limits, key redaction), CORS, deploy config |
+| Frontend unit | 47 | `npm test` | Form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling, the assistant panel (focus, Escape, sources, read-only notice) |
 | End-to-end | 31 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 9 pages, overflow at desktop, mobile and 390 px. Point `E2E_BASE_URL` at the live site to run it there |
 
 The E2E suite files a real report and edits an issue, so reseed afterwards.
@@ -252,18 +257,17 @@ The E2E suite files a real report and edits an issue, so reseed afterwards.
 | [User guide](docs/USER_GUIDE.md) | How to report, route and manage issues |
 | [Accessibility audit](docs/ACCESSIBILITY_AUDIT.md) | What's automated, contrast ratios, and what's still manual |
 | [Design audit](docs/DESIGN_AUDIT.md) | Checks against the anti-AI design directive |
-| [Access Monitor](docs/ACCESS_MONITOR_AGENT.md) | Agent contracts, permissions and tool definitions |
 | [Open source and cost audit](docs/OPEN_SOURCE_AND_COST_AUDIT.md) | Licences for every dependency and service |
 | [Hackathon strategy](docs/HACKATHON_STRATEGY.md) | Five-minute demo script |
-| [Deployment](docs/DEPLOYMENT.md) | Judge demo script, Ollama quick start, hosting on Pages + Render + Supabase, free-tier facts |
+| [Deployment](docs/DEPLOYMENT.md) | Judge demo script, AI keys and free-tier facts, hosting on Pages + Render + Supabase |
 | [Project status](PROJECT_STATUS.md) | Task-by-task status against the plan, and what's unverified |
 
 ## Principles
 
-- **Zero running cost.** Local mode needs no keys or accounts. The hosted demo uses free tiers only; judges may bring their own AI key.
+- **Zero running cost.** Nothing needs a key to run. The hosted demo uses free tiers only; anyone can bring their own AI key.
 - **Explainable by default.** Every score, route and hotspot shows its reasons.
-- **No single channel.** The map always has a list beside it, charts have tables, and routes have written directions.
-- **Human decisions stay human.** Agents can add notes and move reports into review, but only staff can confirm, assign or resolve.
+- **No single channel.** The map always has a list beside it, charts have tables, routes have written directions, and the assistant is an addition to the report form, not a replacement.
+- **Human decisions stay human.** The assistant reads and explains; it can't file, change, verify or resolve anything. AI drafts fill a preview that a person must choose to use and send. Staff confirm, assign and resolve.
 
 ## Licence
 

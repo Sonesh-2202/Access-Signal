@@ -20,7 +20,6 @@ const PlacesPage = lazy(() => import('./pages/Places'))
 const PlaceProfile = lazy(() => import('./pages/PlaceProfile'))
 const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'))
 const IssueDetailPage = lazy(() => import('./pages/dashboard/IssueDetail'))
-const Monitor = lazy(() => import('./pages/dashboard/Monitor'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Settings = lazy(() => import('./pages/Settings'))
 
@@ -64,7 +63,6 @@ export function App() {
         <Route path="/settings" element={s(<Settings />)} />
         <Route path="/dashboard" element={s(<ProtectedRoute staff><Dashboard /></ProtectedRoute>)} />
         <Route path="/dashboard/issues/:id" element={s(<ProtectedRoute staff><IssueDetailPage /></ProtectedRoute>)} />
-        <Route path="/dashboard/monitor" element={s(<ProtectedRoute staff><Monitor /></ProtectedRoute>)} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/terms" element={<Terms />} />

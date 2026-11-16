@@ -92,7 +92,7 @@ export default function IssueDetailPage() {
                       {h.old_status ? `${ISSUE_STATUS_LABEL[h.old_status]} → ` : ''}{ISSUE_STATUS_LABEL[h.new_status]}
                     </p>
                   )}
-                  {h.notes && <p className={cx('text-sm', h.notes.startsWith('Access Monitor:') ? 'font-mono text-xs text-muted' : '')}>{h.notes}</p>}
+                  {h.notes && <p className="text-sm">{h.notes}</p>}
                 </li>
               ))}
             </ol>

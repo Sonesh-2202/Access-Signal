@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/common/Skeleton'
 import { Container, ErrorNote } from '@/components/layout/Layout'
 import { COLORS } from '@/components/map/config'
 import { MapView } from '@/components/map/MapView'
+import { AskButton } from '@/components/assistant/AskButton'
 import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { catLabel, subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
@@ -75,6 +76,11 @@ export default function ReportDetailPage() {
               {r.status === 'duplicate' && <Badge tone="tint">Confirmation of another report</Badge>}
               {r.issue_status && <IssueStatusBadge status={r.issue_status} />}
             </div>
+            <div className="mt-2">
+              <AskButton context={{ kind: 'report', id: r.id }} label={`report at ${r.address ?? 'this location'}`}>
+                Ask about this report
+              </AskButton>
+            </div>
           </header>
 
           {r.issue_status && <IssueProgress status={r.issue_status} />}
@@ -90,7 +96,7 @@ export default function ReportDetailPage() {
 
           {r.ai_analysis && (
             <section className="mt-4 border-t border-hair pt-2" aria-labelledby="ai-h">
-              <h2 id="ai-h" className="meta">{aiSourceShort(r.ai_analysis.source)} reading{r.ai_analysis.model ? `, {r.ai_analysis.model}` : ''}</h2>
+              <h2 id="ai-h" className="meta">{aiSourceShort(r.ai_analysis.source)} reading{r.ai_analysis.model ? `, ${r.ai_analysis.model}` : ''}</h2>
               <p className="mt-1">{r.ai_analysis.summary}</p>
               <p className="mt-0.5 text-sm text-muted">
                 Suggested {subLabel(t, r.ai_analysis.category, r.ai_analysis.subcategory).toLowerCase()}

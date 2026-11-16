@@ -4,12 +4,12 @@ AccessSignal runs in three modes from the same code. Local is the default and ne
 
 | Mode | Frontend | API | Database | Files | AI |
 |---|---|---|---|---|---|
-| **Local** (default) | Vite dev server | uvicorn on your machine | SQLite | `backend/uploads/` | LM Studio or Ollama, then keyword rules |
-| **Docker** | nginx | container | PostGIS container | volume | LM Studio or Ollama on the host |
+| **Local** (default) | Vite dev server | uvicorn on your machine | SQLite | `backend/uploads/` | Keyword rules, or cloud models once you add a key |
+| **Docker** | nginx | container | PostGIS container | volume | Keyword rules, or cloud models with keys in `.env` |
 | **Hosted demo** | GitHub Pages | Render free web service | Supabase Postgres | Supabase Storage (private bucket) | Gemini, then Groq, then Nebius, then keyword rules. Judges can bring their own key |
 
 - [Judge quick demo](#judge-quick-demo)
-- [Self-hoster quick start with Ollama](#self-hoster-quick-start-with-ollama)
+- [AI keys and free tiers](#ai-keys-and-free-tiers)
 - [Hosting the demo yourself](#hosting-the-demo-yourself)
 - [Decisions](#decisions)
 - [Free-tier facts, checked November 16, 2026](#free-tier-facts-checked-november-16-2026)
@@ -34,51 +34,34 @@ Demo accounts all use the password **`Signal-demo-2026`**. These credentials are
 
 1. **Home.** The most corroborated open report, its confidence breakdown, and a walking-versus-wheelchair route comparison.
 2. **Plan a route.** Open *Plan a route*, pick the wheelchair profile. The route avoids the missing curb cut at Union Square and says what that costs: *"Avoids 1 reported barrier … 170 m longer"*.
-3. **File a report** as Priya. On a phone, use *Use my location* or the address search; dragging the pin is optional. Add a photo, then *Suggest category*. The badge says which model answered, for example *Cloud AI (Gemini)*, and the model name.
-4. **Optional: your own AI key.** If suggestions say *Keyword rules, AI offline* (shared free quota used up), choose *Use your own AI key* in the form or open **Settings** from the footer. A Gemini key from [Google AI Studio](https://aistudio.google.com/apikey) takes about 30 seconds. The key stays in that browser tab and is deleted when you close it.
-5. **Manager workflow** as Dana. *Dashboard* shows the priority queue. Open an issue, move it to *Under review*, add a note, and see it in the audit trail.
-6. **Access Monitor.** *Dashboard → Monitor*. Agents run as a dry run by default. They can add notes and move reports into review; only staff can confirm, assign or resolve.
+3. **File a report** as Priya. On a phone, use *Use my location* or the address search; dragging the pin is optional. Add a photo, then *Suggest category*. The badge says which model answered, for example *Cloud AI (Gemini)*, and the model name. *Draft this report* offers a preview you can accept or discard.
+4. **Ask the assistant.** Open the report or the route you just saw and press *Ask about this report* or *Ask about this route*. Ask something like "Is the ramp blocked?". The answer cites the record it used, and the source links open that record. The assistant can read, not change: it says so in the panel, and only a person can file or resolve anything.
+5. **Optional: your own AI key.** If suggestions say *Keyword rules, AI offline* (shared free quota used up), choose *Use your own AI key* in the form or open **Settings** from the footer. A Gemini key from [Google AI Studio](https://aistudio.google.com/apikey) takes about 30 seconds. The key stays in that browser tab and is deleted when you close it.
+6. **Manager workflow** as Dana. *Dashboard* shows the priority queue. Open an issue, move it to *Under review*, add a note, and see it in the audit trail.
 
 The demo files real reports. Ask the owner to reseed afterwards (see [Reset the demo](#reset-the-demo)).
 
 ---
 
-## Self-hoster quick start with Ollama
+## AI keys and free tiers
 
-Everything runs on your machine; nothing leaves it.
+The app works with no AI key. Suggestions then come from keyword rules, labelled *Keyword rules, AI offline*, and the assistant is offline.
 
-1. Install [Ollama](https://ollama.com) and pull the model. The registry tag is `gemma4:12b` (with a colon):
+To use cloud models, set keys in the backend's environment (a platform variable, or `.env` at the repository root for local runs). Each provider is used only when its key is set:
 
-   ```bash
-   ollama pull gemma4:12b
-   ```
+| Variable | Provider | Photos | Get a key |
+|---|---|---|---|
+| `GEMINI_API_KEY` | Google Gemini, OpenAI-compatible endpoint | Yes | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `GROQ_API_KEY` | GroqCloud | No, text only | [GroqCloud console](https://console.groq.com/keys) |
+| `NEBIUS_API_KEY` | Nebius Token Factory (optional) | Only with `NEBIUS_VISION=true` | [Nebius Token Factory](https://tokenfactory.nebius.com/project/api-keys) |
 
-   12B needs about 9 GB of free GPU memory for the Q4 build. On smaller machines use `gemma4:e4b` and set `AI_MODEL=gemma4:e4b`.
+`AI_PROVIDER=cloud` (the default) uses whichever keys are set, in `AI_CLOUD_ORDER` (default `gemini,groq,nebius`). `AI_PROVIDER=none` turns cloud calls off and uses keyword rules only. At startup the API logs one line per tier, for example `AI tier Gemini: key configured (gemini-3.5-flash-lite)`. If no key is set, it logs a warning that names the variables.
 
-2. Set up the app (Windows: `.\scripts\setup_dev.ps1`, macOS/Linux: `scripts/setup_dev.sh`) and create `.env` at the repository root:
+**Bring your own key.** Anyone can paste a key in **Settings**. The browser sends it as `X-AI-Provider` / `X-AI-Key`, only with classification, drafting and assistant requests. The key is never stored or logged, and it wins over the server keys for that request.
 
-   ```dotenv
-   AI_PROVIDER=ollama
-   ```
+**Thinking models.** Gemini 3 and later always think, and thinking tokens count against the output budget. The Gemini provider sends `reasoning_effort: low` and allows 2,048 output tokens so an answer isn't cut off. An empty answer is logged with its `finish_reason`, and the next tier takes over.
 
-   That's all: the base URL defaults to `http://localhost:11434/v1` and the model to `gemma4:12b`. To use LM Studio instead, leave `AI_PROVIDER` unset (default `lmstudio`, `http://localhost:1234/v1`).
-
-3. Start the API and the frontend:
-
-   ```bash
-   cd backend && .venv/bin/python -m uvicorn app.main:app --port 8000
-   cd frontend && npm run dev
-   ```
-
-   The API logs one line per AI tier at startup, for example
-   `AI tier Ollama: available (gemma4:12b at http://localhost:11434/v1)`.
-   If Ollama isn't running you'll see `not reachable`, and the keyword classifier answers. The UI labels those results *Keyword rules, AI offline*.
-
-**What we measured** (Ollama 0.40.16, `gemma4:12b` Q4_K_M, RTX 3060 12 GB): a real curb-ramp photo with no text came back as `crossing / missing_tactile_paving`, `images_reviewed: true`, in 5.0 s. The same photo with "A delivery van is parked across this curb ramp…" came back as `ramp / blocked_ramp`, severity 1.0, in 4.6 s.
-
-**Thinking mode.** Over Ollama's OpenAI-compatible API, `gemma4:12b` thinks by default and spends the whole `max_tokens` budget on hidden reasoning, leaving the answer empty. The Ollama provider sends `reasoning_effort: "none"`, which fixes this. If you point `AI_PROVIDER=ollama` at an older Ollama that ignores the flag, the log says `empty answer (finish_reason=length, output went to reasoning)`.
-
-**Photos.** The provider sends photos first. If a model rejects image input while accepting text, the log says once, on one line, `Ollama model … rejected image input (…); classifying text only from now on.`, and later requests skip the photos. `gemma4:12b` accepted images in our test.
+**Photos.** Providers receive photos first. If a model rejects image input while accepting text, the log says so once, and later requests send text only.
 
 ---
 
@@ -162,8 +145,7 @@ All of these are platform environment variables. Nothing secret is committed; `.
 | `SECRET_KEY` | Render (generated) | JWT signing |
 | `DATABASE_URL` | Render, GitHub secret | Supabase session pooler URL |
 | `AUTO_CREATE_TABLES` | Render | `false`: Alembic owns the schema |
-| `AI_PROVIDER` | Render | `cloud` for the demo; `lmstudio` / `ollama` / `none` elsewhere |
-| `AI_API_BASE`, `AI_MODEL` | local | override the local server's URL and model |
+| `AI_PROVIDER` | Render | `cloud` (default) uses the keys below; `none` uses keyword rules only |
 | `AI_CLOUD_ORDER` | Render | default `gemini,groq,nebius` |
 | `GEMINI_API_KEY`, `GROQ_API_KEY`, `NEBIUS_API_KEY` | Render | a tier is used only when its key is set |
 | `GEMINI_MODEL`, `GROQ_MODEL`, `NEBIUS_MODEL`, `NEBIUS_VISION` | optional | model overrides |
@@ -173,7 +155,8 @@ All of these are platform environment variables. Nothing secret is committed; `.
 | `SIGNED_URL_TTL_SECONDS` | optional | default 300 |
 | `CORS_ORIGINS` | Render | Pages origin plus localhost dev origins |
 | `TRUSTED_PROXY_HOPS` | Render | `1`; see [Known limits](#known-limits) |
-| `BYOK_ENABLED`, `CLASSIFY_RATE_LIMIT_PER_MINUTE`, `CLASSIFY_MAX_BODY_BYTES` | optional | BYOK switch and abuse limits |
+| `BYOK_ENABLED`, `CLASSIFY_RATE_LIMIT_PER_MINUTE`, `CLASSIFY_MAX_BODY_BYTES` | optional | BYOK switch and classification limits |
+| `CHAT_RATE_LIMIT_PER_MINUTE`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_INPUT_CHARS`, `CHAT_MAX_CONTEXT_CHARS`, `CHAT_MAX_TOKENS`, `CHAT_TEMPERATURE`, `CHAT_MAX_BODY_BYTES` | optional | assistant limits (defaults 10/min, 12 turns, 4,000 characters, 6,000 characters of context, 500 tokens, 0.2, 64 KB) |
 | `VITE_API_BASE` | GitHub variable | API origin baked into the frontend build |
 | `VITE_BASE_PATH` / `PAGES_BASE_PATH` | workflow | site sub-path |
 
@@ -185,11 +168,15 @@ All of these are platform environment variables. Nothing secret is committed; `.
 
 **Photos: private bucket and signed URLs.** The API checks the evidence privacy rules first (a draft upload or evidence on a deleted report gets 404 and no URL is signed), then answers with a 307 redirect to a signed URL valid for `SIGNED_URL_TTL_SECONDS` (300 s). Object names are `YYYY/MM/<128-bit random hex>.<ext>`. Magic-byte checks and EXIF/GPS stripping run in the API before any bytes reach storage, on every backend. `backend/tests/test_storage.py` proves these rules against a mocked Supabase API.
 
-**AI tiers.** Every provider shares one prompt, one JSON schema and one parser (`app/services/ai/providers.py`). The order on the hosted demo is Gemini (text and photos, best free vision quota), Groq (fast, text only; photos are not sent and the result says so), Nebius (only if `NEBIUS_API_KEY` is set, to use existing credits; never the default), then keyword rules. Each result carries `source`, `model`, `images_reviewed` and `fallback_reason`, and the UI shows them.
+**Cloud tiers.** Every provider shares one prompt, one JSON schema and one parser (`app/services/ai/providers.py`). The order on the hosted demo is Gemini (text and photos, best free vision quota), Groq (fast, text only; photos are not sent and the result says so), Nebius (only if `NEBIUS_API_KEY` is set, to use existing credits; never the default), then keyword rules. Each classification result carries `source`, `model`, `images_reviewed` and `fallback_reason`, and the UI shows them.
 
-**BYOK.** A judge's key travels as `X-AI-Provider` / `X-AI-Key` on classification and agent requests only. The server builds a one-request provider with it and drops it; it isn't stored, logged or echoed in errors (tested). Base URLs and models always come from server settings, so a caller can't point the server at an arbitrary host. The key sits in the browser tab's `sessionStorage`, readable by anyone using that tab. That's acceptable for a demo session and not for public users.
+**Local models are not supported.** Earlier versions could call a model server running on the same machine. That path was removed to keep the product to one code path: cloud models with bring-your-own-key, then keyword rules. A setting that selects a local server now fails validation at startup. The old URL and model variables are ignored.
 
-**Privacy on free tiers.** Google's free Gemini tier may use submitted content to improve Google's products. The report form tells the reporter which provider will read their text and photos before they ask for a suggestion, and the privacy page says the same. Self-hosted copies with Ollama or LM Studio send nothing out.
+**The assistant is read-only.** `POST /api/chat` reads public reports, places and routes and answers in text. It has no write tools, makes no database changes, and keeps no server-side conversation. Its limits are separate from classification, and it needs a signed-in user so usage is attributable. See [ARCHITECTURE.md](ARCHITECTURE.md#chat-assistant-read-only).
+
+**BYOK.** A judge's key travels as `X-AI-Provider` / `X-AI-Key` on classification, drafting and chat requests only. The server builds a one-request provider with it and drops it; it isn't stored, logged or echoed in errors (tested). Base URLs and models always come from server settings, so a caller can't point the server at an arbitrary host. The key sits in the browser tab's `sessionStorage`, readable by anyone using that tab. That's acceptable for a demo session and not for public users.
+
+**Privacy on free tiers.** Google's free Gemini tier may use submitted content to improve Google's products. The report form and the assistant tell the user which provider will read their text and photos before they send anything, and the privacy page says the same. Conversations with the assistant are sent to the same cloud provider.
 
 ---
 
@@ -211,8 +198,8 @@ These change often. Re-check before an event and update this table rather than g
 
 ## Known limits
 
-- **Rate limiting is per process.** Login, registration, token refresh and classification limits live in memory. The free host runs one uvicorn worker (`--workers 1`), so the limits hold. More workers or instances would each count separately; a shared store (Redis) would be needed then. The routing graph cache is per process too, and 512 MB fits one copy.
+- **Rate limiting is per process.** Login, registration, token refresh, classification and chat limits live in memory. The free host runs one uvicorn worker (`--workers 1`), so the limits hold. More workers or instances would each count separately; a shared store (Redis) would be needed then. The routing graph cache is per process too, and 512 MB fits one copy.
 - **Client IPs behind Render's proxy.** Per-IP limits use `TRUSTED_PROXY_HOPS`: with `1`, the right-most `X-Forwarded-For` entry (written by the platform's proxy) is used, and client-forged entries further left are ignored. We haven't confirmed Render's hop count from inside a live service. After deploying, check that `X-Forwarded-For` has the shape you expect and adjust.
 - **Cold starts.** The first request after 15 idle minutes waits about a minute. Handled by the keep-warm workflow and the wake-up banner.
-- **Shared AI quota.** The demo's Gemini and Groq keys are free tiers shared by everyone using the demo. When they run out, results fall back to keyword rules with the reason shown, and judges can paste their own key.
+- **Shared AI quota.** The demo's Gemini and Groq keys are free tiers shared by everyone using the demo. When they run out, classification falls back to keyword rules with the reason shown, and the assistant asks the user to try again later or add a key. Judges can paste their own key.
 - **Supabase pause.** A week without traffic pauses the project; restore it from the Supabase dashboard (the data is kept).

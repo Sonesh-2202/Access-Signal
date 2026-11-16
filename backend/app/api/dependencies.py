@@ -16,21 +16,21 @@ from app.services.ai.providers import CLOUD_PROVIDERS, Provider
 
 bearer = HTTPBearer(auto_error=False)
 
-# Per-IP limit on every endpoint that can call a model, with or without a BYOK key:
-# a browser-held key must not turn this server into a free relay.
+# Per-IP limits on every endpoint that can call a model, with or without a BYOK key:
+# a browser-held key must not turn this server into a free relay. Chat has its own,
+# lower limit so a conversation can't use up the classifier's budget (or the reverse).
 classify_limiter = SlidingWindowLimiter(get_settings().classify_rate_limit_per_minute)
+chat_limiter = SlidingWindowLimiter(
+    get_settings().chat_rate_limit_per_minute,
+    detail=(f"Chat limit reached: {get_settings().chat_rate_limit_per_minute} questions per minute. "
+            "Wait a minute, then ask again. The report form works without the assistant."),
+)
 _KEY_SHAPE = re.compile(r"^[A-Za-z0-9_\-.:]{16,200}$")
 
 
-def ai_request(
-    request: Request,
-    # No max_length here on purpose: FastAPI's 422 body echoes the rejected input.
-    x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
-    x_ai_key: str | None = Header(default=None, alias="X-AI-Key"),
-) -> Provider | None:
-    """Rate limit, then turn an optional X-AI-Provider / X-AI-Key pair into a one-request
-    provider. The key lives in this request's memory only: it is not stored, logged or echoed."""
-    classify_limiter.check(client_key(request, "classify"))
+def _byok_from_headers(x_ai_provider: str | None, x_ai_key: str | None) -> Provider | None:
+    """Turn an optional X-AI-Provider / X-AI-Key pair into a one-request provider. The key
+    lives in this request's memory only: it is not stored, logged or echoed."""
     if not x_ai_key:
         return None
     if not get_settings().byok_enabled:
@@ -42,6 +42,25 @@ def ai_request(
     if not _KEY_SHAPE.match(x_ai_key.strip()):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That doesn't look like an API key")
     return byok_provider(name, x_ai_key.strip())
+
+
+def ai_request(
+    request: Request,
+    # No max_length here on purpose: FastAPI's 422 body echoes the rejected input.
+    x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
+    x_ai_key: str | None = Header(default=None, alias="X-AI-Key"),
+) -> Provider | None:
+    classify_limiter.check(client_key(request, "classify"))
+    return _byok_from_headers(x_ai_provider, x_ai_key)
+
+
+def chat_request(
+    request: Request,
+    x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
+    x_ai_key: str | None = Header(default=None, alias="X-AI-Key"),
+) -> Provider | None:
+    chat_limiter.check(client_key(request, "chat"))
+    return _byok_from_headers(x_ai_provider, x_ai_key)
 
 
 def _user_from_token(db: Session, creds: HTTPAuthorizationCredentials | None) -> User | None:

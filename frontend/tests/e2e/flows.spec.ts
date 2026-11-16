@@ -78,7 +78,7 @@ test('community member files a report end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue' }).click()
 
   await page.getByRole('button', { name: 'Suggest category' }).click()
-  await expect(page.getByText(/Keyword rules|Local AI|Cloud AI/).first()).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByText(/Keyword rules|Cloud AI/).first()).toBeVisible({ timeout: 90_000 })
   await expect(page.getByLabel('Category')).toHaveValue('sidewalk')
   await page.getByRole('button', { name: 'Continue' }).click()
 

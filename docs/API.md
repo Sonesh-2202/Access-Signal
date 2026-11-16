@@ -18,7 +18,7 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | POST | `/api/auth/logout` | – | Revoke refresh token |
 | GET | `/api/auth/me` | user | Current user |
 | GET | `/api/meta/taxonomy` | – | Categories, subcategories, features, service area |
-| GET | `/api/meta/ai-status` | – | Whether LM Studio is reachable |
+| GET | `/api/meta/ai-status` | – | Cloud tiers and whether each has a key; which tier answers now; chat availability and limits |
 | POST | `/api/evidence` | user | Upload photo/voice (multipart: `file`, `transcription?`, `alt_text?`) |
 | GET | `/api/evidence/{id}/file` | – | Evidence file (attached evidence only) |
 | POST | `/api/reports/classify` | user | AI category suggestion |
@@ -41,8 +41,7 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | GET | `/api/issues/assignees`, `/api/issues/stats` | staff | Helpers |
 | GET | `/api/analytics/overview\|trends\|categories\|resolution\|heat\|coverage\|hotspots` | – | Public analytics |
 | POST | `/api/analytics/hotspots/recalculate` | staff | Re-cluster |
-| GET | `/api/agents` | staff | Agents and tool definitions |
-| POST | `/api/agents/{agent}/run` | staff | `{report_id?, apply, days}` |
+| POST | `/api/chat` | user | Read-only assistant. Body `{messages[], context{kind, id? \| origin?, destination?, profile?}, language?}`. Returns `{answer, sources[], source, model, truncated}`. Writes nothing. Accepts `X-AI-Provider` / `X-AI-Key` |
 
 ## Examples
 

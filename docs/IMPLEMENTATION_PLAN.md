@@ -1,4 +1,4 @@
-﻿# AccessSignal - Implementation Plan
+# AccessSignal - Implementation Plan
 
 ## Problem Statement
 
@@ -13,7 +13,7 @@ People with mobility and sensory disabilities face significant challenges naviga
 Based on the comprehensive project brief:
 
 1. **Map-first discovery** of accessibility information with filtering by accessibility needs
-2. **Multimodal reporting** (photos, voice, text) with local AI classification via LM Studio
+2. **Multimodal reporting** (photos, voice, text) with cloud AI classification and keyword rules as the fallback
 3. **Accessibility intelligence engine** for duplicate detection, confidence scoring, and hotspot identification
 4. **Accessibility-aware routing** considering wheelchair access, stairs, inclines, and known barriers
 5. **Place accessibility profiles** with verified information and evidence trails
@@ -36,7 +36,7 @@ Based on the comprehensive project brief:
 | Backend | FastAPI + Pydantic | High performance, automatic OpenAPI docs, async support |
 | Database | PostgreSQL + PostGIS | Industry standard for geospatial data |
 | Auth | JWT + bcrypt | Simple local auth, no external dependencies |
-| AI | LM Studio OpenAI-compatible API | Uses existing local Gemma 4 12B model at E:\LM Studio\lmstudio-community\gemma-4-12B-it-QAT-GGUF |
+| AI | Cloud OpenAI-compatible APIs (Gemini, Groq, Nebius) | Bring-your-own-key or server keys; keyword rules when no key answers. Local models were dropped |
 | Routing | Custom graph + OSM data | Transparent algorithm, accessibility-weighted edges |
 | File Storage | Local filesystem with abstraction | Zero-cost, configurable for S3 later |
 
@@ -91,8 +91,8 @@ Based on the comprehensive project brief:
   |  |        |                                                    |       |   |
   |  |        v                                                    |       |   |
   |  |  +--------------------------------------------+            |       |   |
-  |  |  |  LM Studio API (Gemma 4 12B)               |            |       |   |
-  |  |  |  localhost:1234/v1                         |            |       |   |
+  |  |  |  Cloud AI APIs (Gemini, Groq, Nebius)      |            |       |   |
+  |  |  |  bring-your-own-key or server keys         |            |       |   |
   |  |  +--------------------------------------------+            |       |   |
   |  +----------------------------------------------------------------+       |   |
   +------------------------------------------------------------------------+   |
@@ -276,7 +276,7 @@ Based on the comprehensive project brief:
 - Create nearby reports endpoint using PostGIS
 
 #### Task 7: AI Classification Service
-- Create OpenAI-compatible client for LM Studio at localhost:1234/v1
+- Create OpenAI-compatible clients for Gemini, Groq and Nebius, with keyword rules as the last tier
 - Build prompt templates for accessibility classification
 - Implement image analysis for photo evidence
 - Create text classification for descriptions
@@ -440,7 +440,7 @@ Based on the comprehensive project brief:
 - Integration tests for API endpoints
 - Property-based tests for routing
 - Test fixtures for common scenarios
-- Mock external services (LM Studio, OSM APIs)
+- Mock external services (cloud AI APIs, OSM APIs)
 
 #### Task 26: Frontend Test Suite
 - Component tests with Testing Library
@@ -479,18 +479,13 @@ Based on the comprehensive project brief:
 
 ### Phase 11: Kiro Crew App
 
-#### Task 31: Access Monitor Agent Specification
-- Specify agent capabilities and tools
-- Design structured output schemas
-- Create tool definitions for backend integration
-- Build agent prompts and instructions
+#### Task 31: Triage agents (removed)
+Planned five narrow agents for intake, evidence, duplicates, hotspots and stale follow-up. They were built, then removed in the cloud-only refactor. See PROJECT_STATUS.md.
 
-#### Task 32: Access Monitor Implementation
-- Create agent for new report intake
-- Build evidence analysis agent
-- Implement duplicate investigation agent
-- Create hotspot analysis agent
-- Build stale report follow-up agent
+#### Task 32: Read-only assistant (replaces the triage agents)
+- Chat endpoint that reads public report, place and route data and writes nothing
+- Assistant panel on report, place and route pages, with sources linked to the records
+- Draft preview on the report form; nothing is filed without the Send button
 
 ---
 
@@ -576,7 +571,7 @@ accesssignal/
 
 ## Key Design Decisions
 
-1. **LM Studio Integration**: Using the OpenAI-compatible API endpoint (localhost:1234/v1) allows easy switching between models and provides a standard interface.
+1. **One cloud client**: Gemini, Groq and Nebius share one OpenAI-compatible client, prompt, schema and parser, so switching providers is a configuration change.
 
 2. **Configurable Tile Source**: Default to OSM.org tiles for simplicity, but fully configurable via environment variable to support self-hosted tile servers.
 
@@ -602,9 +597,8 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 
-# AI Service (LM Studio)
-AI_API_BASE=http://localhost:1234/v1
-AI_MODEL=gemma-4-12b-it-qat-gguf
+# AI (cloud; keys from GEMINI_API_KEY, GROQ_API_KEY, NEBIUS_API_KEY)
+AI_PROVIDER=cloud
 AI_FALLBACK_ENABLED=true
 
 # Map Tiles

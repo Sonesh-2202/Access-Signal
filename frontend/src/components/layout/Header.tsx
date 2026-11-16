@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '@/services/api'
+import { openAssistant } from '@/stores/assistant'
 import { isStaff, readRefreshToken, useAuth } from '@/stores/auth'
 import { cx } from '@/utils/cx'
-import { ButtonLink } from '../common/Button'
+import { Button, ButtonLink } from '../common/Button'
 import { Dialog } from '../common/Dialog'
 import { DataSourcePill } from './DataSourcePill'
 import { Icon } from '../common/Icon'
@@ -65,6 +66,9 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-1">
           <DataSourcePill />
+          <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => openAssistant()}>
+            Ask AccessSignal
+          </Button>
           <ButtonLink to="/report" variant="primary" size="sm" className="hidden sm:inline-flex">
             Report a barrier
           </ButtonLink>
@@ -101,6 +105,20 @@ export function Header() {
               <Link to="/report" className="flex min-h-[52px] items-center justify-between border-b border-hair text-lg font-medium text-signal no-underline">
                 Report a barrier <Icon name="arrowRight" />
               </Link>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  // Close the menu first, so the assistant opens on top of the page and focus
+                  // returns to the menu button when it closes.
+                  setMenu(false)
+                  setTimeout(() => openAssistant(), 0)
+                }}
+                className="flex min-h-[52px] w-full items-center border-b border-hair text-left text-lg text-ink"
+              >
+                Ask AccessSignal
+              </button>
             </li>
             {links.map((l) => (
               <li key={l.to}>

@@ -1,6 +1,7 @@
 import maplibregl, { type Map as MLMap, type Marker } from 'maplibre-gl'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { AskButton } from '@/components/assistant/AskButton'
 import { Button } from '@/components/common/Button'
 import { Checkbox, Segmented } from '@/components/common/Field'
 import { Icon } from '@/components/common/Icon'
@@ -76,6 +77,8 @@ export default function RoutePlanner() {
   const [avoidUnknown, setAvoidUnknown] = useState(false)
   const [pick, setPick] = useState<'from' | 'to' | null>(null)
   const [result, setResult] = useState<RouteResponse | null>(null)
+  /** The inputs that produced `result`, which can differ from the form if the user edited it since. */
+  const [ran, setRan] = useState<{ f: Pt; t: Pt; p: Profile; au: boolean } | null>(null)
   const [selected, setSelected] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -97,6 +100,7 @@ export default function RoutePlanner() {
     try {
       const r = await api.route([f.lat, f.lng], [t.lat, t.lng], p, au)
       setResult(r)
+      setRan({ f, t, p, au })
       setSelected(0)
       announce(`${r.routes.length} route${r.routes.length > 1 ? 's' : ''} found. Recommended: ${distance(r.routes[0].distance_m)}, ${minutes(r.routes[0].duration_min)}.`)
       const q = new URLSearchParams({ from: `${f.lat.toFixed(5)},${f.lng.toFixed(5)}`, to: `${t.lat.toFixed(5)},${t.lng.toFixed(5)}`, profile: p })
@@ -298,6 +302,16 @@ export default function RoutePlanner() {
           {busy && !result && (
             <div aria-hidden>
               <Skeleton className="h-[120px] w-full" />
+            </div>
+          )}
+          {result && ran && (
+            <div className="mt-2">
+              <AskButton
+                context={{ kind: 'route', origin: [ran.f.lat, ran.f.lng], destination: [ran.t.lat, ran.t.lng], profile: ran.p, avoid_unknown: ran.au }}
+                label={`this ${PROFILE_LABEL[ran.p].toLowerCase()} route`}
+              >
+                Ask about this route
+              </AskButton>
             </div>
           )}
           {result && (

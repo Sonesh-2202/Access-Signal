@@ -58,7 +58,7 @@ def test_production_refuses_default_secret():
 
 def _req(xff: str | None, peer: str = "10.0.0.5") -> Request:
     headers = [(b"x-forwarded-for", xff.encode())] if xff else []
-    return Request({"type": "http", "headers": headers, "client": (peer, 1234)})
+    return Request({"type": "http", "headers": headers, "client": (peer, 5678)})
 
 
 def test_client_ip_trusts_only_configured_proxy_hops(monkeypatch):

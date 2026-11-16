@@ -259,7 +259,7 @@ def narrative(db, u: dict[str, User], places: dict[str, Place]) -> None:
                        ("assigned", u["marcus"], "Assigned to terminal operations", ago(11, 12)),
                        ("in_progress", u["marcus"], None, ago(9)),
                        ("resolved", u["marcus"], "Barricades removed, crew confirmed clear path", ago(3)),
-                       ("reverification", None, "Access Monitor: requesting community reverification of the fix",
+                       ("reverification", None, "Community reverification requested for the fix",
                         ago(1))],
               assignee=u["marcus"], resolution="Event barricades removed from the ramp and the operations "
                                                "team added the ramp to the post-event clearance checklist.")

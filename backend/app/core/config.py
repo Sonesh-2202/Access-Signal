@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -12,13 +12,7 @@ REPO_DIR = BACKEND_DIR.parent
 
 DEV_SECRET = "dev-only-secret-change-me"
 
-# Defaults per local AI server. Both expose an OpenAI-compatible API.
-LOCAL_AI_DEFAULTS = {
-    "lmstudio": ("http://localhost:1234/v1", "gemma-4-12b-it-qat-gguf"),
-    "ollama": ("http://localhost:11434/v1", "gemma4:12b"),
-}
-
-AIProviderName = Literal["lmstudio", "ollama", "cloud", "none"]
+AIProviderName = Literal["cloud", "none"]
 CloudProviderName = Literal["gemini", "groq", "nebius"]
 
 
@@ -48,13 +42,11 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     auth_rate_limit_per_minute: int = 10
 
-    # AI. AI_PROVIDER picks the first tier; the keyword classifier is always the last.
-    #   lmstudio / ollama   a local OpenAI-compatible server (AI_API_BASE, AI_MODEL)
-    #   cloud               hosted providers with a key set, in AI_CLOUD_ORDER
-    #   none                keyword classifier only
-    ai_provider: AIProviderName = "lmstudio"
-    ai_api_base: str = "http://localhost:1234/v1"
-    ai_model: str = "gemma-4-12b-it-qat-gguf"
+    # AI. Cloud models only. Tiers: a bring-your-own-key provider from the request, then the
+    # server keys below in AI_CLOUD_ORDER, then keyword rules as the last resort.
+    #   cloud   use the server keys that are set
+    #   none    keyword rules only (no cloud calls from the server)
+    ai_provider: AIProviderName = "cloud"
     ai_fallback_enabled: bool = True
     ai_timeout_seconds: float = 45.0
     ai_cloud_order: Annotated[list[CloudProviderName], NoDecode] = ["gemini", "groq", "nebius"]
@@ -72,6 +64,15 @@ class Settings(BaseSettings):
     byok_enabled: bool = True
     classify_rate_limit_per_minute: int = 20
     classify_max_body_bytes: int = 16_384
+
+    # Chat assistant. Read-only: it answers from public report, place and route data only.
+    chat_rate_limit_per_minute: int = 10
+    chat_max_messages: int = 12
+    chat_max_context_chars: int = 6000
+    chat_max_input_chars: int = 4000
+    chat_max_tokens: int = 500
+    chat_temperature: float = Field(default=0.2, ge=0, le=1)
+    chat_max_body_bytes: int = 65_536
 
     # Files. STORAGE_BACKEND=supabase stores evidence in a private Supabase bucket.
     storage_backend: Literal["local", "supabase"] = "local"
@@ -148,14 +149,6 @@ class Settings(BaseSettings):
     @property
     def max_file_size_bytes(self) -> int:
         return self.max_file_size_mb * 1024 * 1024
-
-    def local_ai(self) -> tuple[str, str]:
-        """Base URL and model for the local server. Explicit AI_API_BASE / AI_MODEL win;
-        otherwise each server gets its own default (LM Studio :1234, Ollama :11434)."""
-        name = self.ai_provider if self.ai_provider in LOCAL_AI_DEFAULTS else "lmstudio"
-        base, model = LOCAL_AI_DEFAULTS[name]
-        return (self.ai_api_base if "ai_api_base" in self.model_fields_set else base,
-                self.ai_model if "ai_model" in self.model_fields_set else model)
 
 
 @lru_cache

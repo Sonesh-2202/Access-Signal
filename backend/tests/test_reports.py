@@ -24,7 +24,7 @@ def test_heuristic_classifier_examples():
     assert heuristic_classify("lovely day").category == "other"
 
 
-def test_classify_falls_back_without_lmstudio(client, user_headers):
+def test_classify_falls_back_to_keyword_rules_without_a_cloud_key(client, user_headers):
     r = client.post("/api/reports/classify", headers=user_headers,
                     json={"description": "No curb cut at the corner after construction"})
     assert r.status_code == 200

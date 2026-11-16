@@ -202,7 +202,7 @@ function FeedCard({ report: r }: { report: ReportDetail }) {
             <ConfidenceMeter value={r.confidence_score} compact />
             {r.ai_analysis && (
               <span className="tabular font-mono text-[11px] text-muted">
-                Gemma {Math.round(r.ai_analysis.confidence * 100)}%
+                AI {Math.round(r.ai_analysis.confidence * 100)}%
               </span>
             )}
           </div>
@@ -318,13 +318,13 @@ interface Step {
 
 /** One real-shaped report followed through every stage: the Broadway & E 14th St curb cut. */
 const STEPS: Step[] = [
-  { status: 'reported', who: 'Anyone with an account', accountable: 'Reporter · Andre W. · photo + voice note', when: 'Mon 08:12', what: 'A report arrives with a location, a category and a photo. The local Gemma model reads the photo and suggests a category; the reporter picks the final one.', you: 'The barrier appears on the map straight away, marked low confidence.' },
-  { status: 'under_review', who: 'Access Monitor, then staff', accountable: 'Intake agent · duplicate check · 2 nearby matches', when: 'Mon 08:13', what: 'The intake agent checks for missing evidence and nearby duplicates and writes its findings into the audit trail. Staff see the report in their queue.', you: 'Other people nearby are asked whether they see it too.' },
+  { status: 'reported', who: 'Anyone with an account', accountable: 'Reporter · Andre W. · photo + voice note', when: 'Mon 08:12', what: 'A report arrives with a location, a category and a photo. A cloud model can suggest a category from the photo; the reporter picks the final one.', you: 'The barrier appears on the map straight away, marked low confidence.' },
+  { status: 'under_review', who: 'Infrastructure staff', accountable: 'Staff queue · 2 nearby matches', when: 'Mon 08:13', what: 'Staff review the report in their queue. Similar reports nearby are offered to the reporter before filing, so a duplicate becomes a confirmation instead of a new entry.', you: 'Other people nearby can confirm they see it too.' },
   { status: 'confirmed', who: 'Infrastructure staff', accountable: 'DOT Borough Office · 311 Ticket #89421', when: 'Mon 11:40', what: 'Staff confirm the barrier after three independent reports and a call to the contractor on site.', you: 'Wheelchair routes now avoid the corner completely.' },
   { status: 'assigned', who: 'Infrastructure staff', accountable: 'DOT Sidewalk Inspection · R. Alvarez', when: 'Mon 14:05', what: 'The issue is assigned to a named person at the agency responsible for the curb.', you: 'The report shows who is handling it.' },
   { status: 'in_progress', who: 'The assignee', accountable: 'Contractor crew · temporary ramp ordered', when: 'Tue 07:30', what: 'Work has started. Notes from the crew are added to the audit trail.', you: 'Status updates appear on the report page.' },
   { status: 'resolved', who: 'The assignee', accountable: 'DOT Sidewalk Inspection · fix photo attached', when: 'Wed 16:20', what: 'The fix is described, with a photo. A resolution can’t be saved without a description of what was done.', you: 'The place profile shows the curb cut working again, pending confirmation.' },
-  { status: 'reverification', who: 'The community', accountable: 'Stale-report agent · 6 people asked nearby', when: 'Wed +7 days', what: 'A week later, the stale-report agent asks people nearby to confirm the fix. If someone says the barrier is back, the issue reopens.', you: 'You can answer “still broken” or “fixed” on the report.' },
+  { status: 'reverification', who: 'The community', accountable: 'Community check-ins', when: 'Wed +7 days', what: 'Once a fix is marked done, people nearby are asked to confirm it. If someone says the barrier is back, the issue reopens.', you: 'You can answer “still broken” or “fixed” on the report.' },
 ]
 
 const STEP_MS = 6500
@@ -354,7 +354,7 @@ function Lifecycle() {
             From a report to a repair
           </h2>
           <p className="text-muted md:col-span-5 md:col-start-8">
-            Seven states, each with a named person or agent responsible. Nothing closes until someone on the street
+            Seven states, each with a named person or team responsible. Nothing closes until someone on the street
             agrees it’s fixed. Followed here for the Broadway &amp; E 14th St curb cut.
           </p>
         </div>
@@ -491,7 +491,7 @@ function EvidencePhoto({ fixed, when }: { fixed: boolean; when: string }) {
         </svg>
         <span className={cx('absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-sm px-1 py-[3px] font-mono text-[11px] text-paper', fixed ? 'bg-ok' : 'bg-signal')}>
           <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-paper/90" />
-          {fixed ? 'Gemma Local Vision: 91% Confidence · Curb Ramp Clear' : 'Gemma Local Vision: 94% Confidence · Curb Ramp Obstruction'}
+          {fixed ? 'AI reading: 91% confidence · Curb ramp clear' : 'AI reading: 94% confidence · Curb ramp obstruction'}
         </span>
       </div>
       <figcaption className="flex flex-wrap justify-between gap-x-2 px-0.5 pt-1 text-xs text-muted">
@@ -683,7 +683,7 @@ function Contribute() {
           </div>
           <div className="border-t border-hair pt-1">
             <dt className="meta">AI</dt>
-            <dd className="mt-0.5">Gemma on local hardware, no cloud calls</dd>
+            <dd className="mt-0.5">Cloud models with your own key or a server key, keyword rules when none answers. The assistant can read, not change.</dd>
           </div>
           <div className="border-t border-hair pt-1">
             <dt className="meta">Cost to run</dt>

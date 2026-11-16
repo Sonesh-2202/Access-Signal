@@ -21,7 +21,7 @@ You need an account so reports can be followed up.
 
 1. **Location**: search, use your location, or click the map and drag the pin.
 2. **What you saw**: add up to 4 photos, a voice note (transcribed live in Chrome and Edge), and a description. Photo location data is removed before storage.
-3. **Category**: press **Suggest category** to have the local AI read your evidence. You choose the final category.
+3. **Category**: press **Suggest category** to have a cloud model read your evidence. You choose the final category. Optionally, **Draft this report** earlier in the form fills in a category and summary for you to accept or discard. Nothing is sent or filed until you press **Send report**.
 4. **Check and send**: if someone already reported the same thing within 50 m, choose it. Your report is added as a confirmation and raises its confidence.
 
 On any report page you can answer **Still there** or **It's cleared**. That's how fixes get verified.
@@ -30,7 +30,7 @@ On any report page you can answer **Still there** or **It's cleared**. That's ho
 
 - **Issue queue** (`/dashboard`): click a pipeline stage to filter. Sorted by priority, then confidence. Export CSV or JSON.
 - **Issue page**: move the issue through its workflow, assign it, change priority, and add notes. Resolving needs a description of the fix and optionally a photo.
-- **Access Monitor** (`/dashboard/monitor`): run triage agents as a dry run, or tick **Allow changes** to let them write notes and status changes. All agent changes appear in the audit trail as "Access Monitor".
+- **Ask the assistant** on a report, place or route page, or from **Ask AccessSignal** in the header. It answers questions in text and cites the records it used; click a source to open it. It can read but not change anything: filing, confirming and resolving stay with people. Assistant questions need you to be signed in, and each person can ask 10 questions a minute.
 
 ## Developer setup
 

@@ -170,8 +170,8 @@ export function report(id: string): ReportDetail {
       summary: `${s.label} at ${base.address?.split(',')[0]}. ${s.blocks_wheelchair ? 'Likely impassable for wheelchair users.' : 'Passable with difficulty for most users.'}`,
       detected_features: [base.category, base.subcategory],
       confidence: base.ai_confidence,
-      source: 'lmstudio',
-      model: 'gemma-3-4b-it (local)',
+      source: 'gemini',
+      model: 'gemini-3.5-flash-lite (demo sample)',
     },
     user_confirmed: true,
     duplicate_of: null,
@@ -269,11 +269,14 @@ export const resolution = () => RESOLUTION
 export const hotspots = () => HOTSPOTS
 export const taxonomy = () => TAXONOMY
 export const aiStatus = (): AIStatus => ({
-  available: true,
-  provider: 'lmstudio',
-  label: 'LM Studio',
-  model: 'gemma-3-4b-it (local)',
+  available: false,
+  provider: 'heuristic',
+  label: 'Keyword rules',
+  model: null,
   fallback_enabled: true,
+  mode: 'cloud',
+  tiers: [{ provider: 'heuristic', label: 'Keyword rules', available: true, model: null, base_url: null, vision: false }],
+  chat: { available: false, tier: null, read_only: true, rate_limit_per_minute: 10, max_messages: 12 },
 })
 
 export function heat(): GeoJSON.FeatureCollection {

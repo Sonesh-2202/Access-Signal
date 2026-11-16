@@ -79,18 +79,21 @@ describe('bring your own key', () => {
   beforeEach(reset)
   afterEach(reset)
 
-  it('sends the key only to classification, and keeps it out of localStorage', async () => {
-    setAIKey('gemini', 'AIzaTestKey-0123456789abcdef')
+  it('sends the key only to AI endpoints (classify and chat), and keeps it out of localStorage', async () => {
+    setAIKey('gemini', 'AIzaTestKey-a1b2c3d4e5f6abcdef')
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       json({ items: [], total: 0, next_offset: null, category: 'other', subcategory: 'other', severity: 0, summary: '', confidence: 0, source: 'gemini', model: 'm' }),
     )
     await api.classify('ramp blocked', [])
     await api.reports({ limit: 1 })
+    await api.chat({ messages: [{ role: 'user', content: 'Is the ramp clear?' }], context: { kind: 'none' } })
     const headersOf = (i: number) => (fetch.mock.calls[i][1]?.headers ?? {}) as Record<string, string>
     expect(String(fetch.mock.calls[0][0])).toContain('/api/reports/classify')
-    expect(headersOf(0)['X-AI-Key']).toBe('AIzaTestKey-0123456789abcdef')
+    expect(headersOf(0)['X-AI-Key']).toBe('AIzaTestKey-a1b2c3d4e5f6abcdef')
     expect(headersOf(0)['X-AI-Provider']).toBe('gemini')
     expect(headersOf(1)['X-AI-Key']).toBeUndefined()
+    expect(String(fetch.mock.calls[2][0])).toContain('/api/chat')
+    expect(headersOf(2)['X-AI-Key']).toBe('AIzaTestKey-a1b2c3d4e5f6abcdef')
     expect(sessionStorage.getItem('accesssignal.aiKey')).toContain('gemini')
     expect(JSON.stringify({ ...localStorage })).not.toContain('AIzaTestKey')
     clearAIKey()
@@ -100,8 +103,6 @@ describe('bring your own key', () => {
 
 describe('explainability labels', () => {
   it('names the tier that produced each result', () => {
-    expect(aiSourceLabel('lmstudio')).toBe('Local AI (LM Studio)')
-    expect(aiSourceLabel('ollama')).toBe('Local AI (Ollama)')
     expect(aiSourceLabel('gemini')).toBe('Cloud AI (Gemini)')
     expect(aiSourceLabel('groq')).toBe('Cloud AI (Groq)')
     expect(aiSourceLabel('heuristic')).toBe('Keyword rules, AI offline')
@@ -109,8 +110,8 @@ describe('explainability labels', () => {
   })
 
   it('tells reporters where their evidence goes', () => {
-    expect(aiPrivacyNote({ available: true, provider: 'ollama', model: 'm', fallback_enabled: true }, false)).toContain('own server')
     expect(aiPrivacyNote({ available: true, provider: 'gemini', model: 'm', fallback_enabled: true }, false)).toContain('Gemini')
+    expect(aiPrivacyNote({ available: true, provider: 'groq', model: 'm', fallback_enabled: true }, false)).toContain('Groq')
     expect(aiPrivacyNote({ available: false, model: null, fallback_enabled: true }, false)).toContain('keyword rules')
     expect(aiPrivacyNote(undefined, true)).toContain('key you added')
   })

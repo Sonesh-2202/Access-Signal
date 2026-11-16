@@ -2,7 +2,8 @@
 # Then seed once:           docker compose exec backend python -m scripts.seed_demo --reset
 # App: http://localhost:3000   API docs: http://localhost:3000/api/docs
 #
-# LM Studio or Ollama runs on the host; the backend reaches it via host.docker.internal.
+# AI runs in the cloud. Put provider keys in the host environment or a root .env file;
+# with no keys set, the classifier uses keyword rules and the assistant is offline.
 
 services:
   db:
@@ -26,16 +27,14 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://accesssignal:accesssignal@db:5432/accesssignal
       SECRET_KEY: ${SECRET_KEY:-change-me}
-      # For Ollama on the host: AI_PROVIDER=ollama AI_API_BASE=http://host.docker.internal:11434/v1
-      AI_PROVIDER: ${AI_PROVIDER:-lmstudio}
-      AI_API_BASE: ${AI_API_BASE:-http://host.docker.internal:1234/v1}
-      AI_MODEL: ${AI_MODEL:-gemma-4-12b-it-qat-gguf}
+      AI_PROVIDER: ${AI_PROVIDER:-cloud}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       UPLOAD_DIR: /data/uploads
       CORS_ORIGINS: http://localhost:3000
     volumes:
       - uploads:/data/uploads
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

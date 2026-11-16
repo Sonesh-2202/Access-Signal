@@ -1,14 +1,16 @@
 """AI providers behind one interface.
 
-Every model tier speaks the OpenAI-compatible chat API, so they share one client:
-the same system prompt, JSON schema and output parser (prompts.py, parse_classification).
-Subclasses only set defaults: base URL, whether a key is needed, whether photos are sent.
+Every cloud tier speaks the OpenAI-compatible chat API, so they share one client.
+Classification uses the same system prompt, JSON schema and output parser
+(prompts.py, parse_classification). The chat assistant uses plain-text calls
+(chat_text) with no schema.
 
-    LocalProvider      LM Studio or Ollama on this machine (probed via GET /models)
     GeminiProvider     Google AI Studio, OpenAI-compatible endpoint, text + photos
     GroqProvider       GroqCloud, text only
     NebiusProvider     Nebius Token Factory (optional, for leftover credits)
     HeuristicProvider  keyword rules, always available, always last
+
+Subclasses only set defaults: base URL, whether photos are sent.
 
 API keys are held on the instance only. They go in the Authorization header and
 never into URLs, log lines or error messages."""
@@ -19,7 +21,6 @@ import base64
 import json
 import logging
 import re
-import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -39,7 +40,7 @@ class ImageInput:
 
 
 class ProviderError(RuntimeError):
-    """A tier could not produce a classification. The message is safe to show and log."""
+    """A tier could not produce an answer. The message is safe to show and log."""
 
 
 class Provider(Protocol):
@@ -55,13 +56,18 @@ class Provider(Protocol):
 _THOUGHT = re.compile(r"<\|channel\>thought.*?<channel\|>|<think>.*?</think>", re.DOTALL)
 
 
+def strip_reasoning(raw: str) -> str:
+    """Drop any reasoning block a model emitted before its answer."""
+    return _THOUGHT.sub("", raw or "")
+
+
 def build_prompt(text: str) -> str:
     return f"Report text from the user:\n\"\"\"\n{text.strip() or '(no text provided)'}\n\"\"\""
 
 
 def parse_classification(raw: str, *, source: str, model: str | None, used_images: bool) -> Classification:
     """Validate model output against the taxonomy. Raises ValueError on anything unusable."""
-    raw = _THOUGHT.sub("", raw or "")
+    raw = strip_reasoning(raw)
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         raise ValueError("no JSON object in model output")
@@ -107,7 +113,6 @@ def _short(e: Exception) -> str:
 class OpenAICompatibleProvider:
     name = "openai"
     label = "OpenAI-compatible"
-    requires_key = True
     default_vision = True
     max_tokens = 400
     extra_body: dict = {}
@@ -127,21 +132,31 @@ class OpenAICompatibleProvider:
     # ---- status
 
     def status(self) -> dict:
-        ok = bool(self._api_key) or not self.requires_key
-        return {"provider": self.name, "label": self.label, "available": ok, "model": self.model,
-                "base_url": self.base_url, "vision": self.vision is not False}
+        return {"provider": self.name, "label": self.label, "available": bool(self._api_key),
+                "model": self.model, "base_url": self.base_url, "vision": self.vision is not False}
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
 
-    def _model_for_request(self) -> str:
-        return self.model
-
     # ---- calls
+
+    def _post(self, body: dict) -> dict:
+        """POST one chat completion and return the first choice. Transport errors and
+        401/403/429 become ProviderError; everything else is raised as httpx raised it."""
+        try:
+            r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(),
+                           timeout=self.timeout)
+            r.raise_for_status()
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise ProviderError(f"{self.label} unreachable ({type(e).__name__})") from None
+        except httpx.HTTPStatusError as e:
+            self._raise_if_fatal(e)
+            raise
+        return r.json()["choices"][0]
 
     def _chat(self, content: list[dict] | str, use_schema: bool) -> str:
         body: dict = {
-            "model": self._model_for_request(),
+            "model": self.model,
             "temperature": 0.1,
             "max_tokens": self.max_tokens,
             "messages": [
@@ -152,9 +167,7 @@ class OpenAICompatibleProvider:
         }
         if use_schema:
             body["response_format"] = {"type": "json_schema", "json_schema": RESPONSE_SCHEMA}
-        r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(), timeout=self.timeout)
-        r.raise_for_status()
-        choice = r.json()["choices"][0]
+        choice = self._post(body)
         content = choice["message"].get("content") or ""
         if not content.strip():
             # Reasoning models can spend the whole max_tokens budget thinking.
@@ -163,9 +176,25 @@ class OpenAICompatibleProvider:
                              f"{', output went to reasoning' if thought else ''})")
         return content
 
+    def chat_text(self, messages: list[dict], *, max_tokens: int, temperature: float) -> str:
+        """Plain-text answer for the chat assistant. Never sends response_format or a JSON
+        schema, and never goes through the classification parser."""
+        body = {"model": self.model, "temperature": temperature, "max_tokens": max_tokens,
+                "messages": messages, **self.extra_body}
+        try:
+            choice = self._post(body)
+            text = strip_reasoning(choice["message"].get("content") or "").strip()
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(f"{self.label} returned HTTP {e.response.status_code}") from None
+        except (KeyError, IndexError, TypeError, ValueError) as e:  # unexpected reply shape
+            raise ProviderError(f"{self.label} sent an unreadable reply ({type(e).__name__})") from None
+        if not text:
+            raise ProviderError(f"{self.label} returned an empty answer")
+        return text
+
     def _attempt(self, content: list[dict] | str, use_schema: bool, used_images: bool) -> Classification:
         raw = self._chat(content, use_schema)
-        return parse_classification(raw, source=self.name, model=self._model_for_request(), used_images=used_images)
+        return parse_classification(raw, source=self.name, model=self.model, used_images=used_images)
 
     def classify(self, text: str, images: list[ImageInput]) -> Classification:
         """Up to four calls, each one answering a question: photos+schema, then text+schema
@@ -175,7 +204,7 @@ class OpenAICompatibleProvider:
         prompt = build_prompt(text)
         image_content: list[dict] | None = None
         if images and self.vision is not False:
-            # Images first: Gemma and Gemini both read better with the image before the text.
+            # Images first: Gemini reads better with the image before the text.
             image_content = [
                 {"type": "image_url", "image_url": {"url": f"data:{img.mime};base64,{base64.b64encode(img.data).decode('ascii')}"}}
                 for img in images[:3]
@@ -190,19 +219,17 @@ class OpenAICompatibleProvider:
                     result = self._attempt(image_content, use_schema, used_images=True)
                     self.vision = True
                     return result
-                except (httpx.ConnectError, httpx.TimeoutException) as e:
-                    raise ProviderError(f"{self.label} unreachable ({type(e).__name__})") from None
+                except ProviderError:
+                    raise
                 except httpx.HTTPStatusError as e:
-                    self._raise_if_fatal(e)
                     image_rejected = last_err = e
                 except (KeyError, ValueError, TypeError, IndexError) as e:
                     last_err = e
             try:
                 result = self._attempt(prompt, use_schema, used_images=False)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
-                raise ProviderError(f"{self.label} unreachable ({type(e).__name__})") from None
+            except ProviderError:
+                raise
             except httpx.HTTPStatusError as e:
-                self._raise_if_fatal(e)
                 last_err = e
                 continue
             except (KeyError, ValueError, TypeError, IndexError) as e:
@@ -211,7 +238,7 @@ class OpenAICompatibleProvider:
             if image_rejected is not None:
                 self.vision = False
                 log.warning("%s model %s rejected image input (%s); classifying text only from now on.",
-                            self.label, self._model_for_request(), _short(image_rejected))
+                            self.label, self.model, _short(image_rejected))
             return result
         raise ProviderError(f"{self.label} classification failed ({_short(last_err) if last_err else 'no attempts'})")
 
@@ -221,46 +248,6 @@ class OpenAICompatibleProvider:
             raise ProviderError(f"{self.label} rejected the API key (HTTP {code})") from None
         if code == 429:
             raise ProviderError(f"{self.label} quota or rate limit reached (HTTP 429)") from None
-
-
-class LocalProvider(OpenAICompatibleProvider):
-    """LM Studio or Ollama. Availability comes from GET /models, cached for 20 s so the
-    UI can poll cheaply; the model actually loaded wins over the configured name."""
-
-    requires_key = False
-    default_vision = None  # depends on the model files; learned on first photo
-
-    LABELS = {"lmstudio": "LM Studio", "ollama": "Ollama"}
-
-    def __init__(self, kind: str, base_url: str, model: str, *, timeout: float = 45.0):
-        super().__init__(base_url, model, timeout=timeout)
-        self.name = kind
-        self.label = self.LABELS.get(kind, kind)
-        self._health: tuple[float, bool, str | None] = (0.0, False, None)
-        if kind == "ollama":
-            # Verified against Ollama 0.40 + gemma4:12b: over /v1 the model thinks by default
-            # and spends max_tokens on `reasoning`, leaving `content` empty. "none" turns
-            # thinking off; classification doesn't need it. LM Studio requests are unchanged.
-            self.extra_body = {"reasoning_effort": "none"}
-
-    def status(self) -> dict:
-        checked, ok, model = self._health
-        if time.monotonic() - checked >= 20:
-            ok, model = False, None
-            try:
-                r = httpx.get(f"{self.base_url}/models", timeout=2.0)
-                r.raise_for_status()
-                ids = [m.get("id") for m in r.json().get("data", [])]
-                ok = bool(ids)
-                model = self.model if self.model in ids else (ids[0] if ids else None)
-            except (httpx.HTTPError, ValueError, AttributeError):
-                pass
-            self._health = (time.monotonic(), ok, model)
-        return {"provider": self.name, "label": self.label, "available": ok, "model": model or self.model,
-                "base_url": self.base_url, "vision": self.vision is not False}
-
-    def _model_for_request(self) -> str:
-        return self._health[2] or self.model
 
 
 class GeminiProvider(OpenAICompatibleProvider):

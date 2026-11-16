@@ -9,11 +9,12 @@ def taxonomy_listing() -> str:
     return "\n".join(lines)
 
 
-SYSTEM_PROMPT = f"""You classify reports of physical accessibility barriers in public spaces in Manhattan.
+SYSTEM_PROMPT = f"""You classify reports of physical accessibility barriers in public spaces in any city.
 Reporters are often disabled people, caregivers or transit staff. Be literal: describe what is visible or stated, do not guess beyond the evidence.
 
 Choose exactly one category and subcategory from this list (use the keys verbatim):
 {taxonomy_listing()}
+If the report does not fit the taxonomy, choose the closest category and say so in the summary.
 
 Severity is 0.0 to 1.0: how much the barrier blocks someone who relies on the missing feature.
 1.0 means impassable for a wheelchair user (blocked ramp, broken elevator with no alternative).

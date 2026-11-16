@@ -28,10 +28,10 @@ describe('AI key panel', () => {
     expect(useAIKey.getState().value).toBeNull()
 
     await user.clear(screen.getByLabelText('API key'))
-    await user.type(screen.getByLabelText('API key'), 'gsk_live_0123456789abcdefWXYZ')
+    await user.type(screen.getByLabelText('API key'), 'gsk_live_a1b2c3d4e5f6abcdefWXYZ')
     await user.selectOptions(screen.getByLabelText('Provider'), 'groq')
     await user.click(screen.getByRole('button', { name: 'Use this key' }))
-    expect(useAIKey.getState().value).toEqual({ provider: 'groq', key: 'gsk_live_0123456789abcdefWXYZ' })
+    expect(useAIKey.getState().value).toEqual({ provider: 'groq', key: 'gsk_live_a1b2c3d4e5f6abcdefWXYZ' })
     expect(screen.getByText('…WXYZ')).toBeInTheDocument()
     expect(screen.getByLabelText('API key')).toHaveValue('') // not left on screen
 

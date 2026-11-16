@@ -54,6 +54,10 @@ export default function ReportNew() {
   const [voice, setVoice] = useState<(VoiceNote & { evidence?: Evidence; status: 'uploading' | 'done' | 'error' }) | null>(null)
   const [description, setDescription] = useState('')
 
+  const [draft, setDraft] = useState<Classification | null>(null)
+  const [drafting, setDrafting] = useState(false)
+  const [draftError, setDraftError] = useState<Error | null>(null)
+
   const [suggestion, setSuggestion] = useState<Classification | null>(null)
   const [classifying, setClassifying] = useState(false)
   const [classifyError, setClassifyError] = useState<Error | null>(null)
@@ -116,6 +120,32 @@ export default function ReportNew() {
       .uploadEvidence(n.blob, `voice.${ext}`, { transcription: n.transcript })
       .then((ev) => setVoice((v) => (v ? { ...v, status: 'done', evidence: ev } : v)))
       .catch(() => setVoice((v) => (v ? { ...v, status: 'error' } : v)))
+  }
+
+  // ------------------------------------------------------------ draft
+  // Runs only when the user asks. It uses the same schema-checked classifier as the category
+  // step, because the chat replies in free text and can't reliably fill category fields.
+  async function draftReport() {
+    setDrafting(true)
+    setDraftError(null)
+    try {
+      setDraft(await api.classify(description, evidenceIds))
+    } catch (e) {
+      setDraftError(e as Error)
+    } finally {
+      setDrafting(false)
+    }
+  }
+
+  /** Copies the draft's category into the form. The summary only fills an empty description. */
+  function useDraft() {
+    if (!draft) return
+    setCategory(draft.category)
+    setSubcategory(draft.subcategory)
+    setSuggestion(draft)
+    if (!description.trim()) setDescription(draft.summary)
+    setDraft(null)
+    announce(`Draft applied: ${subLabel(t, draft.category, draft.subcategory)}. Check the details before you send.`)
   }
 
   // ------------------------------------------------------------ classification
@@ -283,6 +313,39 @@ export default function ReportNew() {
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={4000} rows={5} />
             </Field>
             {!hasContent && <p className="text-sm text-muted">Add a description, photo or voice note to continue.</p>}
+
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <p className="max-w-prose text-sm text-muted">
+                  Optional. Drafts a category and one-line summary from what you wrote and attached. Nothing is filed, and you can edit every field.
+                </p>
+                <Button variant="secondary" size="sm" disabled={!hasContent || uploading} busy={drafting} onClick={draftReport}>
+                  Draft this report
+                </Button>
+              </div>
+              {draftError && <ErrorNote error={draftError} />}
+              {draft && (
+                <section aria-labelledby="draft-h" className="fade-up border border-rule bg-paper-raised p-2">
+                  <p className="meta">Draft, not filed</p>
+                  <h2 id="draft-h" className="mt-0.5 font-sans text-base font-medium">
+                    {subLabel(t, draft.category, draft.subcategory)}
+                  </h2>
+                  <p className="mt-0.5 text-sm">{draft.summary}</p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    <Badge tone={isModelSource(draft.source) ? 'ink' : 'outline'}>{aiSourceLabel(draft.source)}</Badge>{' '}
+                    Your report is only sent when you press Send on the last step.
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <Button variant="primary" size="sm" onClick={useDraft}>
+                      Use these details
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setDraft(null)}>
+                      Discard
+                    </Button>
+                  </div>
+                </section>
+              )}
+            </div>
           </div>
         )}
 

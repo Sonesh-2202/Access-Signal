@@ -75,7 +75,6 @@ export default function Dashboard() {
         title="Issue queue"
         aside={
           <div className="flex flex-wrap gap-1">
-            <ButtonLink to="/dashboard/monitor" variant="ghost" size="sm">Access Monitor</ButtonLink>
             <ButtonLink to="/analytics" variant="ghost" size="sm">Trends</ButtonLink>
           </div>
         }

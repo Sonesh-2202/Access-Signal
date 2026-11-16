@@ -67,15 +67,10 @@ def test_export_csv_neutralises_formulas(client, user_headers, manager_headers):
     assert len(j) == 1
 
 
-def test_agents_dry_run_does_not_write(client, user_headers, manager_headers):
-    rep = _report(client, user_headers)
+def test_staff_changes_are_recorded_with_the_actor(client, user_headers, manager_headers):
+    _report(client, user_headers)
     iid = _issue_id(client, manager_headers)
-    before = len(client.get(f"/api/issues/{iid}", headers=manager_headers).json()["history"])
-    out = client.post("/api/agents/intake/run", headers=manager_headers, json={"report_id": rep["id"]}).json()
-    assert out["agent"] == "intake"
-    assert "photo" in out["missing"]
-    assert all(not a["applied"] for a in out["actions"])
-    assert len(client.get(f"/api/issues/{iid}", headers=manager_headers).json()["history"]) == before
-    client.post("/api/agents/intake/run", headers=manager_headers, json={"report_id": rep["id"], "apply": True})
+    client.patch(f"/api/issues/{iid}", headers=manager_headers, json={"status": "confirmed", "notes": "Seen on site"})
     hist = client.get(f"/api/issues/{iid}", headers=manager_headers).json()["history"]
-    assert any((h["notes"] or "").startswith("Access Monitor:") for h in hist)
+    assert hist[-1]["new_status"] == "confirmed" and hist[-1]["notes"] == "Seen on site"
+    assert hist[-1]["actor_name"] == "Manager"

@@ -1,11 +1,13 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.domain.taxonomy import subcategory_info
 from app.models import Evidence, Issue, Place, Report
 from app.schemas import (
     EvidenceOut,
     IssueHistoryOut,
     IssueOut,
+    PlaceDetail,
     PlaceFeatureOut,
     PlaceSummary,
     ReportDetail,
@@ -73,3 +75,41 @@ def feature_out(f) -> PlaceFeatureOut:
     o = PlaceFeatureOut.model_validate(f)
     o.label = feature_label(f.feature_type)
     return o
+
+
+def place_detail(db: Session, p: Place) -> PlaceDetail:
+    reports = db.scalars(
+        select(Report).where(Report.place_id == p.id, Report.deleted_at.is_(None), Report.duplicate_of.is_(None))
+        .options(selectinload(Report.evidence), selectinload(Report.issue))
+        .order_by(Report.reported_at.desc()).limit(50)
+    ).all()
+
+    timeline: list[dict] = []
+    for f in p.features:
+        if f.source == "osm":
+            continue
+        timeline.append({"at": f.assessed_at.isoformat(), "kind": "feature",
+                         "title": f"{feature_label(f.feature_type)} marked {f.status.replace('_', ' ')}",
+                         "detail": f.notes, "report_id": f.source_report_id})
+    for r in reports:
+        timeline.append({"at": r.reported_at.isoformat(), "kind": "report",
+                         "title": f"Reported: {subcategory_info(r.category, r.subcategory)['label']}",
+                         "detail": r.description[:180] or None, "report_id": r.id})
+        if r.resolved_at:
+            timeline.append({"at": r.resolved_at.isoformat(), "kind": "resolved",
+                             "title": f"Resolved: {subcategory_info(r.category, r.subcategory)['label']}",
+                             "detail": r.issue.resolution_notes if r.issue else None, "report_id": r.id})
+    issue_ids = [r.issue.id for r in reports if r.issue]
+    if issue_ids:
+        for i in db.scalars(select(Issue).where(Issue.id.in_(issue_ids))):
+            for h in i.history:
+                if h.new_status in ("assigned", "in_progress", "reverification"):
+                    timeline.append({"at": h.changed_at.isoformat(), "kind": "issue",
+                                     "title": f"Issue {h.new_status.replace('_', ' ')}", "detail": h.notes,
+                                     "report_id": i.report_id})
+    timeline.sort(key=lambda t: t["at"], reverse=True)
+
+    open_n = sum(1 for r in reports if r.status == "open")
+    base = place_summary(p, open_n)
+    return PlaceDetail(**base.model_dump(), osm_id=p.osm_id, features=[feature_out(f) for f in p.features],
+                       reports=[report_summary(r) for r in reports], timeline=timeline[:40])

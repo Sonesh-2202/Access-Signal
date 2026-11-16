@@ -51,7 +51,7 @@ export interface Classification {
   fallback_reason?: string | null
 }
 
-export type AISource = 'lmstudio' | 'ollama' | 'gemini' | 'groq' | 'nebius' | 'heuristic'
+export type AISource = 'gemini' | 'groq' | 'nebius' | 'heuristic'
 export type CloudProvider = 'gemini' | 'groq' | 'nebius'
 
 export interface AITier {
@@ -70,9 +70,63 @@ export interface AIStatus {
   model: string | null
   vision?: boolean
   fallback_enabled: boolean
-  mode?: 'lmstudio' | 'ollama' | 'cloud' | 'none'
+  mode?: 'cloud' | 'none'
   tiers?: AITier[]
   byok?: { enabled: boolean; providers: CloudProvider[] }
+  /** Server tier only. A user's own key can make chat work when this is false. */
+  chat?: ChatStatus
+}
+
+export interface ChatStatus {
+  available: boolean
+  tier: CloudProvider | null
+  read_only: boolean
+  rate_limit_per_minute: number
+  max_messages: number
+}
+
+/* ------------------------------------------------------------------ chat assistant */
+
+export type ChatRole = 'user' | 'assistant'
+
+export interface ChatMessage {
+  role: ChatRole
+  content: string
+}
+
+/** What the conversation is about. The server loads the public data itself from these ids. */
+export interface ChatContext {
+  kind: 'none' | 'report' | 'place' | 'route'
+  id?: string
+  /** [lat, lng] */
+  origin?: [number, number]
+  destination?: [number, number]
+  profile?: Profile
+  avoid_unknown?: boolean
+}
+
+export interface ChatCitation {
+  /** The bracketed tag the answer uses, e.g. "R1". */
+  tag: string
+  kind: 'report' | 'place' | 'route'
+  label: string
+  /** In-app path, e.g. /reports/<id>. */
+  url: string
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[]
+  context: ChatContext
+  language?: string
+}
+
+export interface ChatReply {
+  answer: string
+  sources: ChatCitation[]
+  source: CloudProvider
+  model: string | null
+  /** True when history or context was cut to fit the limits. */
+  truncated: boolean
 }
 
 export interface Evidence {

@@ -7,7 +7,7 @@ import type { CloudProvider } from '@/types'
  * Held in memory and in this tab's sessionStorage only: it survives a page refresh but
  * is gone when the tab closes, and it is never written to localStorage or sent to the
  * server for storage. It goes out as X-AI-Provider / X-AI-Key on classification and
- * agent requests only. Anyone with access to this browser tab can read it, which is
+ * assistant (chat) requests only. Anyone with access to this browser tab can read it, which is
  * acceptable for a judge's demo session and not for public users.
  */
 const KEY = 'accesssignal.aiKey'

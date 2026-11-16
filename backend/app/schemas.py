@@ -69,7 +69,7 @@ class Classification(BaseModel):
     detected_features: list[str] = []
     confidence: float = Field(ge=0, le=1)
     # Which tier produced this result. Shown in the UI next to every AI reading.
-    source: Literal["lmstudio", "ollama", "gemini", "groq", "nebius", "heuristic"]
+    source: Literal["gemini", "groq", "nebius", "heuristic"]
     model: str | None = None
     images_reviewed: bool = False
     # Why a higher tier didn't answer (e.g. "Gemini quota or rate limit reached"). Never contains keys.
@@ -297,3 +297,51 @@ class HotspotOut(ORM):
     trend: str
     calculated_at: datetime
     label: str | None = None
+
+
+# ---------------------------------------------------------------- chat
+
+class ChatMessage(BaseModel):
+    role: str = Field(max_length=16)  # only "user" and "assistant" are kept; others are dropped
+    content: str = Field(max_length=20_000)  # trimmed to CHAT_MAX_INPUT_CHARS on the server
+
+
+class ChatContext(BaseModel):
+    """What the conversation is about. The browser sends ids and coordinates only; the
+    server loads the public data itself."""
+
+    kind: Literal["none", "report", "place", "route"] = "none"
+    id: str | None = Field(default=None, max_length=36)
+    origin: tuple[float, float] | None = None  # (lat, lng), for kind=route
+    destination: tuple[float, float] | None = None
+    profile: Profile = "wheelchair"
+    avoid_unknown: bool = False
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def in_range(cls, v: tuple[float, float] | None) -> tuple[float, float] | None:
+        if v is not None and not (-90 <= v[0] <= 90 and -180 <= v[1] <= 180):
+            raise ValueError("Coordinates are out of range")
+        return v
+
+
+class ChatIn(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=50)
+    context: ChatContext = Field(default_factory=ChatContext)
+    language: str | None = Field(default=None, max_length=20)  # BCP 47 tag, e.g. "es" or "zh-Hant"
+
+
+class Citation(BaseModel):
+    tag: str  # the bracketed tag the answer uses, e.g. "R1"
+    kind: Literal["report", "place", "route"]
+    label: str = Field(max_length=200)
+    url: str = Field(max_length=200)  # path inside the app, e.g. /reports/<id>
+
+
+class ChatOut(BaseModel):
+    answer: str
+    sources: list[Citation]
+    source: Literal["gemini", "groq", "nebius"]  # which cloud tier answered
+    model: str | None
+    # True when history or context was cut to fit the limits.
+    truncated: bool

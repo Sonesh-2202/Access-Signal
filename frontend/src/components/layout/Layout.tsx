@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { onAnnounce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
+import { AssistantPanel } from '../assistant/AssistantPanel'
 import { Footer } from './Footer'
 import { Header } from './Header'
 import { WakeBanner } from './WakeBanner'
@@ -59,6 +60,7 @@ export function Layout({ fullBleed }: { fullBleed?: boolean }) {
         <Outlet />
       </main>
       {!fullBleed && <Footer />}
+      <AssistantPanel />
       <LiveRegion />
     </div>
   )

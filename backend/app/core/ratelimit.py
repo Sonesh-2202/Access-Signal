@@ -9,9 +9,11 @@ class SlidingWindowLimiter:
     """In-process sliding window limiter. Good enough for a single-node deployment;
     swap for a shared store if the API is ever scaled horizontally."""
 
-    def __init__(self, limit: int, window_seconds: float = 60.0):
+    def __init__(self, limit: int, window_seconds: float = 60.0,
+                 detail: str = "Too many attempts. Try again shortly."):
         self.limit = limit
         self.window = window_seconds
+        self.detail = detail
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
@@ -25,7 +27,7 @@ class SlidingWindowLimiter:
                 retry = int(self.window - (now - q[0])) + 1
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many attempts. Try again shortly.",
+                    detail=self.detail,
                     headers={"Retry-After": str(retry)},
                 )
             q.append(now)

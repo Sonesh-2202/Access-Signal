@@ -26,7 +26,6 @@ export function DataSourcePill() {
           </span>
           <span className="hidden xl:inline">Live Demo Dataset</span>
           <span className="xl:hidden">Demo data</span>
-          <span className="hidden text-muted xl:inline">(Local Gemma AI Ready)</span>
         </motion.p>
       )}
     </AnimatePresence>

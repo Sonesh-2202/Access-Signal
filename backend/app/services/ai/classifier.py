@@ -1,14 +1,13 @@
-"""Accessibility classification through a chain of model tiers (see providers.py),
+"""Accessibility classification through a chain of cloud model tiers (see providers.py),
 ending in a deterministic keyword classifier for when every model is offline, slow,
 over quota, or returns something we can't validate.
 
-Which tiers run is set by AI_PROVIDER:
-    lmstudio  LM Studio on this machine (default)
-    ollama    Ollama on this machine
-    cloud     Gemini, Groq, Nebius: whichever have keys, in AI_CLOUD_ORDER
-    none      keyword rules only
-A bring-your-own-key provider from the request goes in front of the chain.
-Every result carries `source` and `model`, so the UI can say which tier answered."""
+Tier order:
+    1. bring-your-own-key provider from the request, if one was supplied
+    2. server keys in AI_CLOUD_ORDER (gemini, groq, nebius), whichever have a key set
+    3. keyword rules, labelled "heuristic"
+AI_PROVIDER=none skips step 2. Every result carries `source` and `model`, so the UI
+can say which tier answered."""
 
 import logging
 import re
@@ -20,7 +19,6 @@ from app.services.ai.providers import (
     CLOUD_PROVIDERS,
     HeuristicProvider,
     ImageInput,
-    LocalProvider,
     Provider,
     ProviderError,
 )
@@ -92,13 +90,6 @@ def heuristic_classify(text: str) -> Classification:
 
 # ------------------------------------------------------------------ provider chain
 
-class LMStudioClient(LocalProvider):
-    """The original LM Studio client, now one LocalProvider among several."""
-
-    def __init__(self, base_url: str, model: str, timeout: float):
-        super().__init__("lmstudio", base_url, model, timeout=timeout)
-
-
 class ProviderChain:
     def __init__(self, providers: list[Provider], fallback_enabled: bool = True):
         self.providers = providers
@@ -109,8 +100,8 @@ class ProviderChain:
         return [p.status() for p in self.providers] + [self.heuristic.status()]
 
     def status(self) -> dict:
-        """Shape kept from the LM Studio-only days (`available`, `model`, `base_url`), plus
-        which tier would answer now and the full list of tiers."""
+        """Which cloud tier would answer now, plus every tier's state. Keyword rules are
+        listed last and never counted as an active cloud tier."""
         tiers = self.tiers()
         active = next((t for t in tiers[:-1] if t["available"]), None)
         return {
@@ -150,10 +141,7 @@ class ProviderChain:
 
 def build_chain(s: Settings) -> ProviderChain:
     providers: list[Provider] = []
-    if s.ai_provider in ("lmstudio", "ollama"):
-        base, model = s.local_ai()
-        providers.append(LocalProvider(s.ai_provider, base, model, timeout=s.ai_timeout_seconds))
-    elif s.ai_provider == "cloud":
+    if s.ai_provider == "cloud":
         for name in s.ai_cloud_order:
             p = _cloud_provider(s, name, getattr(s, f"{name}_api_key"))
             if p is not None:
@@ -194,14 +182,19 @@ def reset_chain() -> None:
 
 
 def log_startup_status() -> None:
-    """One line per tier at boot, so a self-hoster sees at once whether Ollama/LM Studio
-    was found or the keyword classifier will be answering."""
+    """One line per cloud tier at boot, plus the fallback that will answer when none is
+    configured. A self-hoster sees at once which keys were picked up."""
+    s = get_settings()
     chain = get_chain()
+    if s.ai_provider == "none":
+        log.info("AI: AI_PROVIDER=none. Reports are classified with keyword rules only.")
+        return
     for t in chain.tiers()[:-1]:
-        state = "available" if t["available"] else "not reachable" if t["provider"] in ("lmstudio", "ollama") else "no key"
-        log.info("AI tier %s: %s (%s at %s)", t["label"], state, t["model"], t["base_url"])
+        log.info("AI tier %s: %s (model %s)", t["label"], "key configured" if t["available"] else "no key", t["model"])
     if not chain.status()["available"]:
-        log.info("AI: no model tier available; the keyword classifier will label results as keyword-based.")
+        log.warning("AI: no cloud API key is configured (GEMINI_API_KEY, GROQ_API_KEY or NEBIUS_API_KEY). "
+                    "Reports will be labelled as keyword rules and the chat assistant will be offline "
+                    "unless a user supplies their own key.")
 
 
 def classify(text: str, images: list[ImageInput] | None = None, byok: Provider | None = None) -> Classification:

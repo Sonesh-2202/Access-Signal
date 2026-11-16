@@ -6,10 +6,9 @@ from pathlib import Path
 _tmp = Path(tempfile.mkdtemp(prefix="accesssignal-test-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_tmp / 'test.db').as_posix()}"
 os.environ["UPLOAD_DIR"] = str(_tmp / "uploads")
-os.environ["AI_API_BASE"] = "http://127.0.0.1:9/v1"  # nothing listens here: forces heuristic fallback
 os.environ["AUTH_RATE_LIMIT_PER_MINUTE"] = "1000"
-os.environ["SECRET_KEY"] = "test-secret-key-with-enough-length-1234"
-os.environ["AI_PROVIDER"] = "lmstudio"
+os.environ["SECRET_KEY"] = "test-secret-key-with-enough-length-a1b2"
+os.environ["AI_PROVIDER"] = "cloud"  # no server keys are set below, so tests start on keyword rules
 os.environ["CORS_ORIGINS"] = "http://localhost:5173,https://demo-owner.github.io/"
 for _var in ("GEMINI_API_KEY", "GROQ_API_KEY", "NEBIUS_API_KEY", "STORAGE_BACKEND", "ENVIRONMENT"):
     os.environ.pop(_var, None)
@@ -81,6 +80,15 @@ def fresh_chain():
     reset_chain()
     yield
     reset_chain()
+
+
+@pytest.fixture(autouse=True)
+def fresh_chat_limiter():
+    from app.api.dependencies import chat_limiter
+
+    chat_limiter.reset()
+    yield
+    chat_limiter.reset()
 
 
 @pytest.fixture

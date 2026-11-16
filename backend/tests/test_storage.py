@@ -19,7 +19,7 @@ from app.services.storage import LocalDiskStorage, SupabaseStorage, build_storag
 from tests.test_reports import UNION
 
 SUPABASE = "https://demo-project.supabase.co"
-SERVICE_KEY = "service-role-key-for-tests-only-0123456789"
+SERVICE_KEY = "service-role-key-for-tests-only-a1b2c3d4e5f6"
 BUCKET = "evidence"
 
 

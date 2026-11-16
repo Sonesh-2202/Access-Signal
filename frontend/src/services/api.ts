@@ -3,6 +3,8 @@ import { beginWaking, configureWake, isDemo, markDemo, markLive, useDataSource, 
 import { readRefreshToken, useAuth } from '@/stores/auth'
 import * as local from './mockApi'
 import type {
+  ChatReply,
+  ChatRequest,
   Classification,
   DuplicateCandidate,
   Evidence,
@@ -218,7 +220,7 @@ export async function refreshSession(): Promise<boolean> {
 }
 
 /** Only these endpoints can call a model, so only they ever see a personal AI key. */
-const AI_PATHS = [/^\/api\/reports\/classify$/, /^\/api\/agents\/[a-z_]+\/run$/]
+const AI_PATHS = [/^\/api\/reports\/classify$/, /^\/api\/chat$/]
 
 type RequestOpts = { body?: unknown; query?: Query; form?: FormData; signal?: AbortSignal }
 
@@ -356,10 +358,15 @@ export const api = {
   hotspots: () => withFallback(() => request<Hotspot[]>('GET', '/api/analytics/hotspots'), local.hotspots, 'analytics'),
   recalcHotspots: () => request<Hotspot[]>('POST', '/api/analytics/hotspots/recalculate'),
 
-  // agents
-  agents: () => request<{ agents: Record<string, { title: string; needs_report: boolean; tools: string[] }>; tools: Record<string, { description: string }> }>('GET', '/api/agents'),
-  runAgent: (agent: string, body: { report_id?: string; apply?: boolean; days?: number }) =>
-    request<Record<string, unknown>>('POST', `/api/agents/${agent}/run`, { body }),
+  // assistant (read-only). No local fallback: the demo dataset can't hold a conversation.
+  chat: async (body: ChatRequest): Promise<ChatReply> => {
+    try {
+      return await request<ChatReply>('POST', '/api/chat', { body })
+    } catch (e) {
+      if (e instanceof TypeError) throw new ApiError(503, 'The assistant needs the live AccessSignal service, which isn’t reachable right now.', false)
+      throw e
+    }
+  },
 }
 
 /** Forward and reverse geocoding through the public Nominatim service (OSM).
