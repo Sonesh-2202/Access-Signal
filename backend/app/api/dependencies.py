@@ -17,13 +17,13 @@ from app.services.ai.providers import CLOUD_PROVIDERS, Provider
 bearer = HTTPBearer(auto_error=False)
 
 # Per-IP limits on every endpoint that can call a model, with or without a BYOK key:
-# a browser-held key must not turn this server into a free relay. Chat has its own,
-# lower limit so a conversation can't use up the classifier's budget (or the reverse).
+# a browser-held key must not turn this server into a free relay. Text features (describing a route,
+# translating a draft) have their own lower limit, so they can't use up the classifier's budget.
 classify_limiter = SlidingWindowLimiter(get_settings().classify_rate_limit_per_minute)
-chat_limiter = SlidingWindowLimiter(
-    get_settings().chat_rate_limit_per_minute,
-    detail=(f"Chat limit reached: {get_settings().chat_rate_limit_per_minute} questions per minute. "
-            "Wait a minute, then ask again. The report form works without the assistant."),
+text_ai_limiter = SlidingWindowLimiter(
+    get_settings().text_ai_rate_limit_per_minute,
+    detail=(f"AI limit reached: {get_settings().text_ai_rate_limit_per_minute} requests per minute. "
+            "Wait a minute, then try again. The rest of AccessSignal still works."),
 )
 _KEY_SHAPE = re.compile(r"^[A-Za-z0-9_\-.:]{16,200}$")
 
@@ -54,12 +54,12 @@ def ai_request(
     return _byok_from_headers(x_ai_provider, x_ai_key)
 
 
-def chat_request(
+def text_ai_request(
     request: Request,
     x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
     x_ai_key: str | None = Header(default=None, alias="X-AI-Key"),
 ) -> Provider | None:
-    chat_limiter.check(client_key(request, "chat"))
+    text_ai_limiter.check(client_key(request, "text_ai"))
     return _byok_from_headers(x_ai_provider, x_ai_key)
 
 

@@ -11,8 +11,8 @@ import re
 import httpx
 
 from app.core.config import get_settings
-from app.services.ai.chat import FAILED_MESSAGE, ChatUnavailableError, _tiers
 from app.services.ai.providers import ProviderError, strip_reasoning
+from app.services.ai.tiers import FAILED_MESSAGE, AIUnavailableError, available_tiers, redact
 
 log = logging.getLogger("app.services.ai.translate")
 
@@ -30,10 +30,10 @@ def valid_language(tag: str) -> bool:
 
 
 def translate(text: str, target: str, byok) -> dict:
-    """Returns {translation, source, model}. Raises ChatUnavailableError when no cloud tier answers."""
-    tiers = _tiers(byok)
+    """Returns {translation, source, model}. Raises AIUnavailableError when no cloud tier answers."""
+    tiers = available_tiers(byok)
     if not tiers:
-        raise ChatUnavailableError(NEEDS_AI_MESSAGE)
+        raise AIUnavailableError(NEEDS_AI_MESSAGE)
     s = get_settings()
     secrets = [getattr(p, "_api_key", None) for p in tiers]
     messages = [
@@ -42,20 +42,15 @@ def translate(text: str, target: str, byok) -> dict:
     ]
     for p in tiers:
         try:
-            raw = p.chat_text(messages, max_tokens=min(s.chat_max_tokens * 2, 1200), temperature=0.1)
+            raw = p.chat_text(messages, max_tokens=min(s.text_ai_max_tokens * 2, 1200), temperature=0.1)
         except (ProviderError, httpx.HTTPError) as e:
-            log.warning("Translation via %s failed: %s", p.label, _redact(str(e), secrets))
+            log.warning("Translation via %s failed: %s", p.label, redact(str(e), secrets))
             continue
         out = strip_reasoning(raw).strip()
         if not out or len(out) > max(300, 3 * len(text)):
             log.warning("Translation from %s was empty or far too long; trying the next tier.", p.label)
             continue
         return {"translation": out, "source": p.name, "model": p.model}
-    raise ChatUnavailableError(FAILED_MESSAGE)
+    raise AIUnavailableError(FAILED_MESSAGE)
 
 
-def _redact(text: str, secrets: list[str]) -> str:
-    for secret in secrets:
-        if secret:
-            text = text.replace(secret, "[key redacted]")
-    return text

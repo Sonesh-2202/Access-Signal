@@ -7,7 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import alerts, analytics, auth, chat, evidence, issues, meta, places, reports, rides, routing
+from app.api.routes import alerts, analytics, auth, evidence, issues, meta, places, reports, rides, routing
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.services.ai.classifier import log_startup_status
@@ -47,15 +47,14 @@ app = FastAPI(
         {"name": "routing", "description": "Accessibility-aware pedestrian routing"},
         {"name": "issues", "description": "Infrastructure manager workflow (staff only)"},
         {"name": "analytics", "description": "Trends, hotspots and coverage"},
-        {"name": "chat", "description": "Read-only AI assistant over public reports, places and routes"},
         {"name": "alerts", "description": "Saved routes, Web Push subscriptions and the in-app inbox (opt-in)"},
         {"name": "meta", "description": "Health, taxonomy and AI status"},
     ],
 )
 
-# Endpoints that call a model take small JSON bodies only. The chat cap is larger because
-# a conversation carries its history with it.
-_AI_PATHS = ("/api/reports/classify", "/api/reports/translate", "/api/rides/draft")
+# Endpoints that call a model take small JSON bodies only.
+_AI_PATHS = ("/api/reports/classify",)
+_TEXT_AI_PATHS = ("/api/routing/describe", "/api/reports/translate")
 
 
 @app.middleware("http")
@@ -63,8 +62,8 @@ async def limit_body_size(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH"):
         s = get_settings()
         path = request.url.path
-        if path.startswith("/api/chat"):
-            small, cap = True, s.chat_max_body_bytes
+        if path.startswith(_TEXT_AI_PATHS):
+            small, cap = True, s.text_ai_max_body_bytes
         elif path.startswith(_AI_PATHS):
             small, cap = True, s.classify_max_body_bytes
         else:
@@ -99,5 +98,5 @@ app.add_middleware(
 )
 
 
-for r in (auth, meta, evidence, reports, places, routing, issues, analytics, chat, rides, alerts):
+for r in (auth, meta, evidence, reports, places, routing, issues, analytics, rides, alerts):
     app.include_router(r.router)

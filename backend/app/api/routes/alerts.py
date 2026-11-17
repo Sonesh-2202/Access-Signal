@@ -1,4 +1,4 @@
-"""Route alerts (AI-4): saved corridors, Web Push subscriptions and the in-app inbox.
+"""Route alerts: saved corridors, alerts near me, Web Push subscriptions and the in-app inbox.
 
 Everything here is opt-in and belongs to the signed-in user. Corridors and subscriptions are
 private to their owner: a request for someone else's item gets a 404. Nothing in this file
@@ -19,10 +19,18 @@ from app.schemas import (
     CorridorPatch,
     InboxItem,
     InboxOut,
+    NearbyItem,
+    NearbyLocationIn,
+    NearbyNowIn,
+    NearbyOut,
+    NearbySettingsIn,
+    NearbySettingsOut,
     PushStatus,
     PushSubscribeIn,
     PushUnsubscribeIn,
 )
+from app.services.alerts.check import barrier_label, find_nearby, fresh_location, outage_label
+from app.services.alerts.matching import NEARBY_LOCATION_TTL
 from app.services.alerts.push import push_enabled
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -124,6 +132,65 @@ def delete_corridor(corridor_id: str, user: User = Depends(current_user), db: Se
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+
+# ------------------------------------------------------------------ alerts near me (no AI)
+@router.post("/nearby/now", response_model=NearbyOut)
+def nearby_now(body: NearbyNowIn, db: Session = Depends(get_db)) -> NearbyOut:
+    """What is open near a point the person names, right now. Public. Nothing is stored or sent:
+    the point is read, answered and dropped, which is why the browser can use it without an account."""
+    found = find_nearby(db, body.lat, body.lng, body.radius_m)
+    barriers = [NearbyItem(id=r.id, kind="barrier", label=barrier_label(r), place_name=None,
+                           distance_m=round(d), url=f"/reports/{r.id}", when=r.reported_at)
+                for r, d in found.barriers[:50]]
+    outages = [NearbyItem(id=f.id, kind="outage", label=outage_label(f), place_name=p.name,
+                          distance_m=round(d), url=f"/places/{p.id}", when=f.assessed_at)
+               for f, p, d in found.outages[:50]]
+    return NearbyOut(radius_m=body.radius_m, checked_at=utcnow(), barriers=barriers, outages=outages)
+
+
+def _nearby_settings(user: User) -> NearbySettingsOut:
+    loc = fresh_location(user, utcnow())
+    expires = user.nearby_location_at + NEARBY_LOCATION_TTL if loc and user.nearby_location_at else None
+    return NearbySettingsOut(enabled=bool(user.nearby_alerts), radius_m=user.nearby_radius_m,
+                             has_location=loc is not None, location_expires_at=expires)
+
+
+@router.get("/nearby/settings", response_model=NearbySettingsOut)
+def get_nearby_settings(user: User = Depends(current_user)) -> NearbySettingsOut:
+    return _nearby_settings(user)
+
+
+@router.put("/nearby/settings", response_model=NearbySettingsOut)
+def set_nearby_settings(body: NearbySettingsIn, user: User = Depends(current_user),
+                        db: Session = Depends(get_db)) -> NearbySettingsOut:
+    """Turn alerts near me on or off. Turning them off also forgets the shared location."""
+    user.nearby_alerts = body.enabled
+    user.nearby_radius_m = body.radius_m
+    if not body.enabled:
+        user.nearby_lat = user.nearby_lng = user.nearby_location_at = None
+    db.commit()
+    return _nearby_settings(user)
+
+
+@router.put("/nearby/location", response_model=NearbySettingsOut)
+def share_nearby_location(body: NearbyLocationIn, user: User = Depends(current_user),
+                          db: Session = Depends(get_db)) -> NearbySettingsOut:
+    """Store the person's location for alerts near me. Kept to four decimal places (about 11 m), and
+    it expires after 24 hours. Only accepted while alerts near me are on."""
+    if not user.nearby_alerts:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Turn on alerts near me before sharing a location")
+    user.nearby_lat = round(body.lat, 4)
+    user.nearby_lng = round(body.lng, 4)
+    user.nearby_location_at = utcnow()
+    db.commit()
+    return _nearby_settings(user)
+
+
+@router.delete("/nearby/location", status_code=status.HTTP_204_NO_CONTENT)
+def forget_nearby_location(user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
+    user.nearby_lat = user.nearby_lng = user.nearby_location_at = None
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 # ------------------------------------------------------------------ inbox
 def _item(n: Notification, names: dict[str, str]) -> InboxItem:

@@ -7,6 +7,7 @@ import { ConfidenceBreakdownView, ConfidenceMeter } from '@/components/common/Co
 import { CountUp } from '@/components/common/CountUp'
 import { Icon } from '@/components/common/Icon'
 import { Skeleton } from '@/components/common/Skeleton'
+import { NearbyCard } from '@/components/alerts/NearbyCard'
 import { HeroVisual } from '@/components/hero/HeroVisual'
 import { Container } from '@/components/layout/Layout'
 import { CategoryGlyph } from '@/components/reports/ReportRow'
@@ -28,6 +29,7 @@ export function Home() {
   return (
     <>
       <Hero />
+      <NearbyCard />
       <RecentReports />
       <Lifecycle />
       <RouteComparison />
@@ -683,7 +685,7 @@ function Contribute() {
           </div>
           <div className="border-t border-hair pt-1">
             <dt className="meta">AI</dt>
-            <dd className="mt-0.5">Cloud models with your own key or a server key, keyword rules when none answers. The assistant can read, not change.</dd>
+            <dd className="mt-0.5">Cloud models with your own key or a server key, keyword rules when none answers. The AI reads messy text and photos, and can translate a draft. Nothing else.</dd>
           </div>
           <div className="border-t border-hair pt-1">
             <dt className="meta">Cost to run</dt>

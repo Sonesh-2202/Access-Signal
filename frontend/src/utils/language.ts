@@ -1,6 +1,6 @@
 /**
  * The language a person reads and writes in, kept on this device only (localStorage). It sets the
- * default translation target and the language the assistant replies in. Nothing is sent to the
+ * default translation target. Nothing is sent to the
  * server until a person asks for a translation or a reply.
  */
 

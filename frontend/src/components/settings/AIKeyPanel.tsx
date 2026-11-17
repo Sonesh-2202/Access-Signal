@@ -40,11 +40,11 @@ export function AIKeyPanel({ status, onSaved }: { status?: AIStatus; onSaved?: (
     <div className="flex flex-col gap-3">
       <div className="max-w-prose text-sm leading-relaxed">
         <p>
-          Server keys are shared and can run out at busy times. Paste your own key and suggestions and assistant answers use it instead.
+          Server keys are shared and can run out at busy times. Paste your own key and suggestions, route descriptions and translations use it instead.
         </p>
         <ul className="mt-1 flex flex-col gap-0.5 text-muted [&_li]:ml-3 [&_li]:list-disc">
           <li>The key stays in this browser tab and is deleted when you close the tab.</li>
-          <li>It is sent only with “Suggest category”, “Draft this report” and assistant requests. The AccessSignal API passes it to the provider and does not store or log it.</li>
+          <li>It is sent only with “Suggest category”, “Draft this report” and route-description or translation requests. The AccessSignal API passes it to the provider and does not store or log it.</li>
           <li>Anyone using this browser tab can read it. Use a key you can revoke, and remove it when you’re done.</li>
         </ul>
       </div>

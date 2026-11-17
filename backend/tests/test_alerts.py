@@ -9,7 +9,6 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest
 from pywebpush import WebPushException
 from sqlalchemy import func, select
 
@@ -30,7 +29,7 @@ from app.services.alerts.matching import near_route, route_fingerprint
 from app.services.alerts.notify import notify
 from app.services.alerts.reverify import notify_reverification
 from app.services.routing.engine import Router
-from tests.conftest import GRID_LAT, GRID_LNG, PASSWORD, STEP, login, make_user
+from tests.conftest import GRID_LAT, GRID_LNG, STEP, login, make_user
 
 ORIGIN = (GRID_LAT, GRID_LNG)
 DEST = (GRID_LAT + 4 * STEP, GRID_LNG + 4 * STEP)

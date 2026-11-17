@@ -35,7 +35,7 @@ Demo accounts all use the password **`Signal-demo-2026`**. These credentials are
 1. **Home.** The most corroborated open report, its confidence breakdown, and a walking-versus-wheelchair route comparison.
 2. **Plan a route.** Open *Plan a route*, pick the wheelchair profile. The route avoids the missing curb cut at Union Square and says what that costs: *"Avoids 1 reported barrier … 170 m longer"*.
 3. **File a report** as Priya. On a phone, use *Use my location* or the address search; dragging the pin is optional. Add a photo, then *Suggest category*. The badge says which model answered, for example *Cloud AI (Gemini)*, and the model name. *Draft this report* offers a preview you can accept or discard.
-4. **Ask the assistant.** Open the report or the route you just saw and press *Ask about this report* or *Ask about this route*. Ask something like "Is the ramp blocked?". The answer cites the record it used, and the source links open that record. The assistant can read, not change: it says so in the panel, and only a person can file or resolve anything.
+4. **Turn on alerts near me.** In Settings, switch on *Alerts near me* and allow location. Open the home page and press *Check near me*: open barriers and out-of-service features within 250 m are listed with their distance. The inbox shows the same alerts.
 5. **Optional: your own AI key.** If suggestions say *Keyword rules, AI offline* (shared free quota used up), choose *Use your own AI key* in the form or open **Settings** from the footer. A Gemini key from [Google AI Studio](https://aistudio.google.com/apikey) takes about 30 seconds. The key stays in that browser tab and is deleted when you close it.
 6. **Manager workflow** as Dana. *Dashboard* shows the priority queue. Open an issue, move it to *Under review*, add a note, and see it in the audit trail.
 
@@ -45,7 +45,7 @@ The demo files real reports. Ask the owner to reseed afterwards (see [Reset the 
 
 ## AI keys and free tiers
 
-The app works with no AI key. Suggestions then come from keyword rules, labelled *Keyword rules, AI offline*, and the assistant is offline.
+The app works with no AI key. Suggestions then come from keyword rules, labelled *Keyword rules, AI offline*. Translation and route descriptions are unavailable. Alerts near me, the route planner and the scores work in full, because they use no AI.
 
 To use cloud models, set keys in the backend's environment (a platform variable, or `.env` at the repository root for local runs). Each provider is used only when its key is set:
 
@@ -57,7 +57,7 @@ To use cloud models, set keys in the backend's environment (a platform variable,
 
 `AI_PROVIDER=cloud` (the default) uses whichever keys are set, in `AI_CLOUD_ORDER` (default `gemini,groq,nebius`). `AI_PROVIDER=none` turns cloud calls off and uses keyword rules only. At startup the API logs one line per tier, for example `AI tier Gemini: key configured (gemini-3.5-flash-lite)`. If no key is set, it logs a warning that names the variables.
 
-**Bring your own key.** Anyone can paste a key in **Settings**. The browser sends it as `X-AI-Provider` / `X-AI-Key`, only with classification, drafting and assistant requests. The key is never stored or logged, and it wins over the server keys for that request.
+**Bring your own key.** Anyone can paste a key in **Settings**. The browser sends it as `X-AI-Provider` / `X-AI-Key`, only with classification, translation and route-description requests. The key is never stored or logged, and it wins over the server keys for that request.
 
 **Thinking models.** Gemini 3 and later always think, and thinking tokens count against the output budget. The Gemini provider sends `reasoning_effort: low` and allows 2,048 output tokens so an answer isn't cut off. An empty answer is logged with its `finish_reason`, and the next tier takes over.
 
@@ -156,7 +156,7 @@ All of these are platform environment variables. Nothing secret is committed; `.
 | `CORS_ORIGINS` | Render | Pages origin plus localhost dev origins |
 | `TRUSTED_PROXY_HOPS` | Render | `1`; see [Known limits](#known-limits) |
 | `BYOK_ENABLED`, `CLASSIFY_RATE_LIMIT_PER_MINUTE`, `CLASSIFY_MAX_BODY_BYTES` | optional | BYOK switch and classification limits |
-| `CHAT_RATE_LIMIT_PER_MINUTE`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_INPUT_CHARS`, `CHAT_MAX_CONTEXT_CHARS`, `CHAT_MAX_TOKENS`, `CHAT_TEMPERATURE`, `CHAT_MAX_BODY_BYTES` | optional | assistant limits (defaults 10/min, 12 turns, 4,000 characters, 6,000 characters of context, 500 tokens, 0.2, 64 KB) |
+| `TEXT_AI_RATE_LIMIT_PER_MINUTE`, `TEXT_AI_MAX_TOKENS`, `TEXT_AI_TEMPERATURE`, `TEXT_AI_MAX_BODY_BYTES` | optional | Limits for route descriptions and translations |
 | `VITE_API_BASE` | GitHub variable | API origin baked into the frontend build |
 | `VITE_BASE_PATH` / `PAGES_BASE_PATH` | workflow | site sub-path |
 
@@ -170,13 +170,15 @@ All of these are platform environment variables. Nothing secret is committed; `.
 
 **Cloud tiers.** Every provider shares one prompt, one JSON schema and one parser (`app/services/ai/providers.py`). The order on the hosted demo is Gemini (text and photos, best free vision quota), Groq (fast, text only; photos are not sent and the result says so), Nebius (only if `NEBIUS_API_KEY` is set, to use existing credits; never the default), then keyword rules. Each classification result carries `source`, `model`, `images_reviewed` and `fallback_reason`, and the UI shows them.
 
+**Scheduled alert checks.** `python -m scripts.check_corridors` checks saved routes and alerts near me in one run. The workflow `.github/workflows/route-alerts.yml` runs it every 15 minutes. It is off unless the repository variable `ROUTE_ALERTS_ENABLED` is `true`, so forks and the public demo don't run it. To enable it, set the secret `DATABASE_URL` (the database the API uses) and, for browser push, `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (generate them once with `python -m scripts.generate_vapid`), with `VAPID_SUBJECT` as an optional `mailto:` address. Without the VAPID keys alerts still reach the inbox, and only browser push is skipped. No cloud AI key is needed. GitHub may delay scheduled runs by several minutes.
+
 **Local models are not supported.** Earlier versions could call a model server running on the same machine. That path was removed to keep the product to one code path: cloud models with bring-your-own-key, then keyword rules. A setting that selects a local server now fails validation at startup. The old URL and model variables are ignored.
 
-**The assistant is read-only.** `POST /api/chat` reads public reports, places and routes and answers in text. It has no write tools, makes no database changes, and keeps no server-side conversation. Its limits are separate from classification, and it needs a signed-in user so usage is attributable. See [ARCHITECTURE.md](ARCHITECTURE.md#chat-assistant-read-only).
+**Text features are read-only.** `POST /api/routing/describe` and `POST /api/reports/translate` read one sentence or draft, return text, and write nothing. They need sign-in, a rate limit, and a cloud key or a user's own key. Without either they say so. Nothing else uses a model.
 
-**BYOK.** A judge's key travels as `X-AI-Provider` / `X-AI-Key` on classification, drafting and chat requests only. The server builds a one-request provider with it and drops it; it isn't stored, logged or echoed in errors (tested). Base URLs and models always come from server settings, so a caller can't point the server at an arbitrary host. The key sits in the browser tab's `sessionStorage`, readable by anyone using that tab. That's acceptable for a demo session and not for public users.
+**BYOK.** A judge's key travels as `X-AI-Provider` / `X-AI-Key` on classification, translation and route-description requests only. The server builds a one-request provider with it and drops it; it isn't stored, logged or echoed in errors (tested). Base URLs and models always come from server settings, so a caller can't point the server at an arbitrary host. The key sits in the browser tab's `sessionStorage`, readable by anyone using that tab. That's acceptable for a demo session and not for public users.
 
-**Privacy on free tiers.** Google's free Gemini tier may use submitted content to improve Google's products. The report form and the assistant tell the user which provider will read their text and photos before they send anything, and the privacy page says the same. Conversations with the assistant are sent to the same cloud provider.
+**Privacy on free tiers.** Google's free Gemini tier may use submitted content to improve Google's products. The report form and the route description box say where your text goes before you send it. Do not put personal details in either.
 
 ---
 
@@ -198,8 +200,8 @@ These change often. Re-check before an event and update this table rather than g
 
 ## Known limits
 
-- **Rate limiting is per process.** Login, registration, token refresh, classification and chat limits live in memory. The free host runs one uvicorn worker (`--workers 1`), so the limits hold. More workers or instances would each count separately; a shared store (Redis) would be needed then. The routing graph cache is per process too, and 512 MB fits one copy.
+- **Rate limiting is per process.** Login, registration, token refresh, classification and text-AI limits live in memory. The free host runs one uvicorn worker (`--workers 1`), so the limits hold. More workers or instances would each count separately; a shared store (Redis) would be needed then. The routing graph cache is per process too, and 512 MB fits one copy.
 - **Client IPs behind Render's proxy.** Per-IP limits use `TRUSTED_PROXY_HOPS`: with `1`, the right-most `X-Forwarded-For` entry (written by the platform's proxy) is used, and client-forged entries further left are ignored. We haven't confirmed Render's hop count from inside a live service. After deploying, check that `X-Forwarded-For` has the shape you expect and adjust.
 - **Cold starts.** The first request after 15 idle minutes waits about a minute. Handled by the keep-warm workflow and the wake-up banner.
-- **Shared AI quota.** The demo's Gemini and Groq keys are free tiers shared by everyone using the demo. When they run out, classification falls back to keyword rules with the reason shown, and the assistant asks the user to try again later or add a key. Judges can paste their own key.
+- **Shared AI quota.** The demo's Gemini and Groq keys are free tiers shared by everyone using the demo. When they run out, classification falls back to keyword rules with the reason shown, and route descriptions and translations ask the user to try again later or add a key. Judges can paste their own key.
 - **Supabase pause.** A week without traffic pauses the project; restore it from the Supabase dashboard (the data is kept).

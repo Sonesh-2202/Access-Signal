@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from 'react'
 import { Button } from '@/components/common/Button'
 import { Textarea } from '@/components/common/Field'
 import { api } from '@/services/api'
-import { useAuth } from '@/stores/auth'
 import type { DispatcherDraft, RideOption } from '@/types'
 import { announce } from '@/utils/announce'
 
@@ -15,13 +14,12 @@ interface Props {
 }
 
 /**
- * Shown when no step-free route exists. It lists local accessible ride services and drafts a
- * dispatcher message. Nothing is booked or sent: the person calls, or copies or reads the draft.
+ * Shown when no step-free route exists. It lists local accessible ride services and offers a fixed
+ * dispatcher message to read, copy or have read aloud. Nothing is booked or sent.
  */
 export function RideHandoffCard({ pickup, dropoff, barrier, passengers = 1 }: Props) {
   const headingId = useId()
   const draftId = useId()
-  const user = useAuth((s) => s.user)
   const [rides, setRides] = useState<RideOption[] | null>(null)
   const [draft, setDraft] = useState<DispatcherDraft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -31,13 +29,12 @@ export function RideHandoffCard({ pickup, dropoff, barrier, passengers = 1 }: Pr
     api.rides().then(setRides).catch(() => setRides([]))
   }, [])
 
-  async function makeDraft(useAi: boolean) {
+  async function makeDraft() {
     setBusy(true)
     setError(null)
     try {
-      const d = await api.rideDraft({ pickup, dropoff, barrier, passengers, use_ai: useAi })
-      setDraft(d)
-      announce(d.source === 'ai' ? 'AI draft ready for review' : 'Draft ready for review')
+      setDraft(await api.rideDraft({ pickup, dropoff, barrier, passengers }))
+      announce('Draft ready for review')
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -104,29 +101,12 @@ export function RideHandoffCard({ pickup, dropoff, barrier, passengers = 1 }: Pr
       )}
 
       <h4 className="meta mt-2">Message for the dispatcher</h4>
-      <p className="mt-0.5 text-sm text-muted">
-        Make a draft to read, copy or read aloud. It is not sent.
-      </p>
-      <div className="mt-1 flex flex-wrap gap-1">
-        <Button type="button" variant="ghost" size="sm" busy={busy} onClick={() => makeDraft(false)}>
+      <p className="mt-0.5 text-sm text-muted">A fixed message to review. It is not sent.</p>
+      <div className="mt-1">
+        <Button type="button" variant="ghost" size="sm" busy={busy} onClick={makeDraft}>
           Make a draft
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={!user || busy}
-          onClick={() => makeDraft(true)}
-          aria-describedby={user ? undefined : 'ride-ai-hint'}
-        >
-          Write it with AI
-        </Button>
       </div>
-      {!user && (
-        <p id="ride-ai-hint" className="mt-0.5 text-xs text-muted">
-          Sign in to write the draft with AI. The standard draft works without it.
-        </p>
-      )}
       {error && (
         <p role="alert" className="mt-0.5 text-sm text-signal">
           {error}
@@ -135,10 +115,9 @@ export function RideHandoffCard({ pickup, dropoff, barrier, passengers = 1 }: Pr
       {draft && (
         <div className="mt-1">
           <label htmlFor={draftId} className="text-sm font-medium">
-            {draft.source === 'ai' ? 'AI draft — review before sending' : 'Template draft — review before sending'}
+            Template draft — review before sending
           </label>
           <Textarea id={draftId} readOnly rows={7} value={draft.text} className="mt-0.5 font-mono text-sm" />
-          {draft.note && <p className="mt-0.5 text-xs text-muted">{draft.note}</p>}
           <p className="mt-0.5 text-xs text-muted">{draft.label}</p>
           <div className="mt-1 flex flex-wrap gap-1">
             <Button type="button" variant="ghost" size="sm" onClick={copyDraft}>

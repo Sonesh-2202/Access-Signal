@@ -276,7 +276,7 @@ export const aiStatus = (): AIStatus => ({
   fallback_enabled: true,
   mode: 'cloud',
   tiers: [{ provider: 'heuristic', label: 'Keyword rules', available: true, model: null, base_url: null, vision: false }],
-  chat: { available: false, tier: null, read_only: true, rate_limit_per_minute: 10, max_messages: 12 },
+  text_ai: { available: false, tier: null, rate_limit_per_minute: 10 },
 })
 
 export function heat(): GeoJSON.FeatureCollection {

@@ -6,7 +6,7 @@ Policy: no paid services and no proprietary runtime dependencies. The app runs w
 
 | Service | Used for | Cost | Key needed | Notes |
 |---|---|---|---|---|
-| Google Gemini API, free tier | AI classification and assistant (text + photos) | $0 | Yes | Free-tier content may be used to improve Google products; disclosed in the report form, the assistant and the privacy page |
+| Google Gemini API, free tier | AI classification, translation and route descriptions (text + photos) | $0 | Yes | Free-tier content may be used to improve Google's products. Do not paste personal details |
 | GroqCloud, free plan | Hosted demo AI (text) | $0 | Yes | Optional second tier |
 | Nebius Token Factory | Hosted demo AI | Existing credits | Yes | Optional; never the default |
 | Supabase, free plan | Hosted Postgres and photo storage | $0 | Yes (server-side) | Pauses after 7 idle days |

@@ -73,66 +73,25 @@ export interface AIStatus {
   mode?: 'cloud' | 'none'
   tiers?: AITier[]
   byok?: { enabled: boolean; providers: CloudProvider[] }
-  /** Server tier only. A user's own key can make chat work when this is false. */
-  chat?: ChatStatus
+  /** Server tier only. Describing a route and translating a draft use this tier, or a user's own key. */
+  text_ai?: TextAIStatus
 }
 
-export interface ChatStatus {
+export interface TextAIStatus {
   available: boolean
   tier: CloudProvider | null
-  read_only: boolean
   rate_limit_per_minute: number
-  max_messages: number
 }
 
-/* ------------------------------------------------------------------ chat assistant */
+/* ------------------------------------------------------------------ describe a route in plain words (AI) */
 
-export type ChatRole = 'user' | 'assistant'
-
-export interface ChatMessage {
-  role: ChatRole
-  content: string
-}
-
-/** What the conversation is about. The server loads the public data itself from these ids. */
-export interface ChatContext {
-  kind: 'none' | 'report' | 'place' | 'route'
-  id?: string
-  /** [lat, lng] */
-  origin?: [number, number]
-  destination?: [number, number]
-  profile?: Profile
-  avoid_unknown?: boolean
-}
-
-export interface ChatCitation {
-  /** The bracketed tag the answer uses, e.g. "R1". */
-  tag: string
-  kind: 'report' | 'place' | 'route'
-  label: string
-  /** In-app path, e.g. /reports/<id>. */
-  url: string
-}
-
-/** "plan_route" reads the latest message as a route request. Answers come back with a route. */
-export type ChatIntent = 'answer' | 'plan_route'
-
-export interface ChatRequest {
-  messages: ChatMessage[]
-  context: ChatContext
-  language?: string
-  intent?: ChatIntent
-}
-
-export interface ChatReply {
+/** The planned route, plus the explanation a cloud model wrote. The route is the router's output. */
+export interface DescribeReply {
   answer: string
-  sources: ChatCitation[]
-  source: CloudProvider
+  /** Null when no model wrote the explanation. The route summary is then the router's own text. */
+  source: CloudProvider | null
   model: string | null
-  /** True when history or context was cut to fit the limits. */
-  truncated: boolean
-  /** Set for intent "plan_route". The route is the router's output, not the model's. */
-  route?: RoutePlanResult | null
+  route: RoutePlanResult
 }
 
 export type AvoidFeature = 'reported_barriers' | 'construction' | 'unknown_data' | 'stairs' | 'steep_slopes' | 'rough_surfaces'
@@ -418,16 +377,13 @@ export interface RideDraftRequest {
   dropoff: string
   barrier: string
   passengers?: number
-  use_ai?: boolean
 }
 
 export interface DispatcherDraft {
   text: string
-  source: 'ai' | 'template'
-  model: string | null
+  source: 'template'
   preview: true
   label: string
-  note: string | null
 }
 
 /* ------------------------------------------------------------------ route alerts (AI-4) */
@@ -467,7 +423,7 @@ export interface AlertPushStatus {
   public_key: string | null
 }
 
-export type AlertKind = 'report' | 'outage' | 'route_change' | 'reverify'
+export type AlertKind = 'report' | 'outage' | 'route_change' | 'reverify' | 'nearby_report' | 'nearby_outage'
 
 export interface InboxItem {
   id: string
@@ -490,6 +446,13 @@ export interface Inbox {
 export type PreflightStatus = 'good' | 'caution' | 'blocked'
 
 /** Rules-based status for a place. Reasons carry their citation tags, e.g. "[R1] Open report: ...". */
+export interface PreflightSource {
+  tag: string
+  kind: 'report' | 'place'
+  label: string
+  url: string
+}
+
 export interface PreflightBrief {
   place_id: string
   place_name: string
@@ -498,16 +461,8 @@ export interface PreflightBrief {
   reasons: string[]
   summary: string
   source: 'rules'
-  sources: ChatCitation[]
+  sources: PreflightSource[]
   screen_reader: string
-}
-
-export interface PreflightSummary {
-  summary: string
-  /** "rules" when no cloud model answered. */
-  source: CloudProvider | 'rules'
-  model: string | null
-  sources: ChatCitation[]
 }
 
 /* ------------------------------------------------------------------ multilingual reporting (AI-6) */
@@ -529,4 +484,33 @@ export interface TranslationRecord {
   source: string
   model: string | null
   reviewed: true
+}
+
+/* ------------------------------------------------------------------ alerts near me (no AI) */
+
+export type NearbyRadius = 100 | 250 | 500
+
+/** One open barrier or one out-of-service feature near a point. Labels are never report text. */
+export interface NearbyItem {
+  id: string
+  kind: 'barrier' | 'outage'
+  label: string
+  place_name: string | null
+  distance_m: number
+  url: string
+  when: string | null
+}
+
+export interface NearbyOut {
+  radius_m: number
+  checked_at: string
+  barriers: NearbyItem[]
+  outages: NearbyItem[]
+}
+
+export interface NearbySettings {
+  enabled: boolean
+  radius_m: number
+  has_location: boolean
+  location_expires_at: string | null
 }

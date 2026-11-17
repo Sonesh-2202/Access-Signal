@@ -2,8 +2,8 @@
 
 Every cloud tier speaks the OpenAI-compatible chat API, so they share one client.
 Classification uses the same system prompt, JSON schema and output parser
-(prompts.py, parse_classification). The chat assistant uses plain-text calls
-(chat_text) with no schema.
+(prompts.py, parse_classification). Route description and translation use plain-text
+calls (chat_text) with no schema, except the route intent, which uses chat_json.
 
     GeminiProvider     Google AI Studio, OpenAI-compatible endpoint, text + photos
     GroqProvider       GroqCloud, text only
@@ -177,7 +177,7 @@ class OpenAICompatibleProvider:
         return content
 
     def chat_text(self, messages: list[dict], *, max_tokens: int, temperature: float) -> str:
-        """Plain-text answer for the chat assistant. Never sends response_format or a JSON
+        """Plain-text answer for route explanations and translations. Never sends response_format or a JSON
         schema, and never goes through the classification parser."""
         body = {"model": self.model, "temperature": temperature, "max_tokens": max_tokens,
                 "messages": messages, **self.extra_body}

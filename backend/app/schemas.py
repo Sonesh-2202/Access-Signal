@@ -324,40 +324,6 @@ class HotspotOut(ORM):
     label: str | None = None
 
 
-# ---------------------------------------------------------------- chat
-
-class ChatMessage(BaseModel):
-    role: str = Field(max_length=16)  # only "user" and "assistant" are kept; others are dropped
-    content: str = Field(max_length=20_000)  # trimmed to CHAT_MAX_INPUT_CHARS on the server
-
-
-class ChatContext(BaseModel):
-    """What the conversation is about. The browser sends ids and coordinates only; the
-    server loads the public data itself."""
-
-    kind: Literal["none", "report", "place", "route"] = "none"
-    id: str | None = Field(default=None, max_length=36)
-    origin: tuple[float, float] | None = None  # (lat, lng), for kind=route
-    destination: tuple[float, float] | None = None
-    profile: Profile = "wheelchair"
-    avoid_unknown: bool = False
-
-    @field_validator("origin", "destination")
-    @classmethod
-    def in_range(cls, v: tuple[float, float] | None) -> tuple[float, float] | None:
-        if v is not None and not (-90 <= v[0] <= 90 and -180 <= v[1] <= 180):
-            raise ValueError("Coordinates are out of range")
-        return v
-
-
-class ChatIn(BaseModel):
-    messages: list[ChatMessage] = Field(min_length=1, max_length=50)
-    context: ChatContext = Field(default_factory=ChatContext)
-    language: str | None = Field(default=None, max_length=20)  # BCP 47 tag, e.g. "es" or "zh-Hant"
-    # "plan_route" reads the last user message as a route request (see services/ai/chat.py).
-    intent: Literal["answer", "plan_route"] = "answer"
-
-
 AvoidFeature = Literal["reported_barriers", "construction", "unknown_data", "stairs", "steep_slopes", "rough_surfaces"]
 
 
@@ -392,24 +358,85 @@ class RoutePlanResult(BaseModel):
     message: str  # plain text for places and routes that could not be planned
 
 
-class Citation(BaseModel):
-    tag: str  # the bracketed tag the answer uses, e.g. "R1"
-    kind: Literal["report", "place", "route"]
-    label: str = Field(max_length=200)
-    url: str = Field(max_length=200)  # path inside the app, e.g. /reports/<id>
+# ---------------------------------------------------------------- describe a route in plain words
+class DescribeIn(BaseModel):
+    text: str = Field(min_length=3, max_length=1000)  # e.g. "step-free from Union Square to Grand Central"
 
 
-class ChatOut(BaseModel):
-    answer: str
-    sources: list[Citation]
-    source: Literal["gemini", "groq", "nebius"]  # which cloud tier answered
+class DescribeOut(BaseModel):
+    answer: str  # the explanation, or the router's message when nothing could be planned
+    # The cloud tier that wrote the explanation. None when no model wrote one, or when the request
+    # could not be planned, in which case the answer is the router's own message.
+    source: Literal["gemini", "groq", "nebius"] | None
     model: str | None
-    # True when history or context was cut to fit the limits.
-    truncated: bool
-    # Set only for intent="plan_route". The route comes from the router, not from the model.
-    route: RoutePlanResult | None = None
+    route: RoutePlanResult  # the router's output, not the model's
 
-# ---------------------------------------------------------------- accessible rides (AI-3)
+
+# ---------------------------------------------------------------- alerts near me (no AI)
+NearbyRadius = Literal[100, 250, 500]  # metres; the only radii a person can choose
+
+
+class NearbyNowIn(BaseModel):
+    """A point the person names for a one-off check. Not stored: the request is read, answered and dropped."""
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    radius_m: NearbyRadius = 250
+
+
+class NearbyItem(BaseModel):
+    id: str
+    kind: Literal["barrier", "outage"]
+    label: str = Field(max_length=200)  # e.g. "Blocked ramp" or "Elevator out of service"; never the report text
+    place_name: str | None = None
+    distance_m: int
+    url: str = Field(max_length=200)  # in-app path to the report or place
+    when: datetime | None = None  # when it was reported, or when its status was last assessed
+
+
+class NearbyOut(BaseModel):
+    radius_m: int
+    checked_at: datetime
+    barriers: list[NearbyItem]
+    outages: list[NearbyItem]
+
+
+class NearbySettingsIn(BaseModel):
+    enabled: bool
+    radius_m: NearbyRadius = 100
+
+
+class NearbySettingsOut(BaseModel):
+    enabled: bool
+    radius_m: int
+    has_location: bool
+    location_expires_at: datetime | None = None
+
+
+class NearbyLocationIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+# ---------------------------------------------------------------- preflight brief (rules only)
+class PreflightSource(BaseModel):
+    tag: str  # the tag used in the reasons, e.g. "R1" or "P1"
+    kind: Literal["report", "place"]
+    label: str = Field(max_length=200)
+    url: str = Field(max_length=200)  # path inside the app
+
+
+class PreflightOut(BaseModel):
+    place_id: str
+    place_name: str
+    status: Literal["good", "caution", "blocked"]
+    status_label: str
+    reasons: list[str]  # each starts with its tag, e.g. "[R1] ...", when one exists
+    summary: str  # the rule-based summary: status, then the first reasons
+    sources: list[PreflightSource]
+    screen_reader: str
+
+
+# ---------------------------------------------------------------- accessible rides (curated list, template draft)
 class RideOption(BaseModel):
     """One curated ride service. Only tel: and https links are ever rendered."""
     id: str = Field(max_length=40)
@@ -427,25 +454,17 @@ class RideDraftIn(BaseModel):
     dropoff: str = Field(min_length=2, max_length=120)
     barrier: str = Field(min_length=2, max_length=200)  # the specific barrier, e.g. "missing curb cut"
     passengers: int = Field(default=1, ge=1, le=4)
-    use_ai: bool = False  # False: the fixed template. True: a cloud model, checked against the template facts
 
 
 class DispatcherDraft(BaseModel):
-    """A message the person reviews before sending. Never sent by the app."""
+    """A fixed-template message for the person to review. The app never sends it."""
     text: str
-    source: Literal["ai", "template"]
-    model: str | None = None
+    source: Literal["template"] = "template"
     preview: Literal[True] = True
     label: str
-    note: str | None = None  # why the template was used when AI was asked for
 
 
-class RideHandoff(BaseModel):
-    options: list[RideOption]
-    draft: DispatcherDraft
-
-
-# ---------------------------------------------------------------- route alerts (AI-4)
+# ---------------------------------------------------------------- route alerts (saved routes, nearby, push, inbox)
 class CorridorIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     origin: tuple[float, float]  # (lat, lng)
@@ -522,23 +541,3 @@ class InboxItem(BaseModel):
 class InboxOut(BaseModel):
     unread: int
     items: list[InboxItem]
-
-
-# ---------------------------------------------------------------- preflight brief (AI-5)
-class PreflightOut(BaseModel):
-    place_id: str
-    place_name: str
-    status: Literal["good", "caution", "blocked"]
-    status_label: str
-    reasons: list[str]  # each starts with its tag, e.g. "[R1] ...", when one exists
-    summary: str  # rule-based here; the AI summary comes from the POST endpoint
-    source: Literal["rules"]
-    sources: list[Citation]
-    screen_reader: str
-
-
-class PreflightSummaryOut(BaseModel):
-    summary: str
-    source: Literal["gemini", "groq", "nebius", "rules"]  # "rules" when no cloud model answered
-    model: str | None
-    sources: list[Citation]

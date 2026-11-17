@@ -30,7 +30,8 @@ On any report page you can answer **Still there** or **It's cleared**. That's ho
 
 - **Issue queue** (`/dashboard`): click a pipeline stage to filter. Sorted by priority, then confidence. Export CSV or JSON.
 - **Issue page**: move the issue through its workflow, assign it, change priority, and add notes. Resolving needs a description of the fix and optionally a photo.
-- **Ask the assistant** on a report, place or route page, or from **Ask AccessSignal** in the header. It answers questions in text and cites the records it used; click a source to open it. It can read but not change anything: filing, confirming and resolving stay with people. Assistant questions need you to be signed in, and each person can ask 10 questions a minute.
+- **Near you now** on the home page checks what is open within 250 m of where you are, once per press. To be alerted about changes, turn on **alerts near me** in Settings. You choose the distance (100, 250 or 500 m) and can turn it off at any time, which also forgets your location. Alerts never contain an address or report text.
+- **Describe your route** on the route planner turns one sentence into a route, using a cloud AI key. Without a key, use the form on the same page.
 
 ## Developer setup
 

@@ -1,19 +1,25 @@
-"""Recheck saved routes and send alerts. Schedule it with any free scheduler, every 15 to 60 minutes:
+"""Run the scheduled alert checks in one command: saved routes, then alerts near me.
 
     python -m scripts.check_corridors
 
-It reads DATABASE_URL and the VAPID keys from the environment. It prints counts only, never
-endpoints, keys or names."""
+Schedule it every 10 to 15 minutes (see .github/workflows/route-alerts.yml). It reads DATABASE_URL and the
+VAPID keys from the environment and prints counts only: no addresses, names, endpoints or keys.
+Off unless the scheduler is turned on; nothing here needs a cloud AI key."""
 
 from app.core.database import SessionLocal
-from app.services.alerts.check import check_all
+from app.services.alerts.check import check_all, check_nearby_all
 
 
 def main() -> int:
     with SessionLocal() as db:
-        totals = check_all(db)
-    print(f"checked {totals['corridors']} saved routes, sent {totals['events']} alerts, "
-          f"{totals['no_route']} had no route")
+        routes = check_all(db)
+        nearby = check_nearby_all(db)
+    print(
+        f"saved routes: checked {routes['corridors']}, sent {routes['events']} alerts, "
+        f"{routes['no_route']} had no route. "
+        f"Alerts near me: {nearby['users']} people checked, {nearby['events']} alerts sent, "
+        f"{nearby['purged']} expired locations cleared."
+    )
     return 0
 
 

@@ -482,7 +482,7 @@ Based on the comprehensive project brief:
 #### Task 31: Triage agents (removed)
 Planned five narrow agents for intake, evidence, duplicates, hotspots and stale follow-up. They were built, then removed in the cloud-only refactor. See PROJECT_STATUS.md.
 
-#### Task 32: Read-only assistant (replaces the triage agents)
+#### Task 32: Read-only assistant (removed in the rules-first revision; see PROJECT_STATUS)
 - Chat endpoint that reads public report, place and route data and writes nothing
 - Assistant panel on report, place and route pages, with sources linked to the records
 - Draft preview on the report form; nothing is filed without the Send button

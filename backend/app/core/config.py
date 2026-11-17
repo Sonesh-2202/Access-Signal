@@ -65,14 +65,12 @@ class Settings(BaseSettings):
     classify_rate_limit_per_minute: int = 20
     classify_max_body_bytes: int = 16_384
 
-    # Chat assistant. Read-only: it answers from public report, place and route data only.
-    chat_rate_limit_per_minute: int = 10
-    chat_max_messages: int = 12
-    chat_max_context_chars: int = 6000
-    chat_max_input_chars: int = 4000
-    chat_max_tokens: int = 500
-    chat_temperature: float = Field(default=0.2, ge=0, le=1)
-    chat_max_body_bytes: int = 65_536
+    # Text AI: describing a route in plain words and translating a report draft. Read-only.
+    # Limits for the two features that use a text model: describing a route and translating a draft.
+    text_ai_rate_limit_per_minute: int = 10
+    text_ai_max_tokens: int = 500
+    text_ai_temperature: float = Field(default=0.2, ge=0, le=1)
+    text_ai_max_body_bytes: int = 65_536
 
     # Web Push for route alerts. Self-hosted VAPID keys: no paid notification service. Generate with
     # scripts/generate_vapid.py. Without them, alerts still reach the in-app inbox, only the push is skipped.

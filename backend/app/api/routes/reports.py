@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import ai_request, chat_request, current_user, optional_user
+from app.api.dependencies import ai_request, current_user, text_ai_request
 from app.api.serializers import report_detail, report_summary
 from app.core.database import get_db
 from app.domain.taxonomy import is_valid_category, subcategory_info
@@ -24,7 +24,7 @@ from app.schemas import (
 )
 from app.services import issues as issue_service
 from app.services.ai import translate as translate_service
-from app.services.ai.chat import ChatUnavailableError, normalise_language
+from app.services.ai.tiers import AIUnavailableError, normalise_language
 from app.services import places as place_service
 from app.services.ai.classifier import ImageInput, classify
 from app.services.ai.providers import Provider
@@ -93,14 +93,14 @@ def check_duplicates(body: DuplicateCheckIn, db: Session = Depends(get_db)):
 
 @router.post("/translate", response_model=TranslateOut)
 def translate_draft(body: TranslateIn, _: User = Depends(current_user),
-                    byok: Provider | None = Depends(chat_request)) -> TranslateOut:
+                    byok: Provider | None = Depends(text_ai_request)) -> TranslateOut:
     """Translate a report draft for the reporter to review. Read-only: nothing is filed or stored."""
     target = normalise_language(body.target)
     if target is None or not translate_service.valid_language(target):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choose a language such as en or es")
     try:
         result = translate_service.translate(body.text, target, byok)
-    except ChatUnavailableError as e:
+    except AIUnavailableError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
     return TranslateOut(original=body.text, translation=result["translation"], target=target,
                         source=result["source"], model=result["model"], label=translate_service.LABEL)

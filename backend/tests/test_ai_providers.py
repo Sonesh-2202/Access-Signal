@@ -203,24 +203,23 @@ def test_fallback_disabled_raises_when_every_tier_fails(fake):
 
 # ------------------------------------------------------------------ API: status, BYOK, limits
 
-def test_ai_status_lists_tiers_and_chat(client, fresh_chain):
+def test_ai_status_lists_tiers_and_text_features(client, fresh_chain):
     body = client.get("/api/meta/ai-status").json()
     assert body["available"] is False and body["provider"] == "heuristic"
     assert [t["provider"] for t in body["tiers"]] == ["heuristic"]
     assert body["byok"]["providers"] == ["gemini", "groq", "nebius"]
-    assert body["chat"]["available"] is False and body["chat"]["tier"] is None
-    assert body["chat"]["read_only"] is True
-    assert body["chat"]["rate_limit_per_minute"] == get_settings().chat_rate_limit_per_minute
+    assert body["text_ai"]["available"] is False and body["text_ai"]["tier"] is None
+    assert body["text_ai"]["rate_limit_per_minute"] == get_settings().text_ai_rate_limit_per_minute
 
 
-def test_ai_status_reports_chat_tier_when_a_key_is_set(client, monkeypatch, fresh_chain):
+def test_ai_status_reports_text_tier_when_a_key_is_set(client, monkeypatch, fresh_chain):
     monkeypatch.setattr(get_settings(), "groq_api_key", KEY)
     from app.services.ai.classifier import reset_chain
 
     reset_chain()
     body = client.get("/api/meta/ai-status").json()
     assert body["available"] is True and body["provider"] == "groq"
-    assert body["chat"]["available"] is True and body["chat"]["tier"] == "groq"
+    assert body["text_ai"]["available"] is True and body["text_ai"]["tier"] == "groq"
     assert KEY not in str(body)
 
 

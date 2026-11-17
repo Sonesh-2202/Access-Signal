@@ -1,33 +1,11 @@
-"""Preflight brief (AI-5): a Good / Caution / Blocked status from open reports and key features,
-tagged reasons, a screen-reader string, a cited AI summary, and no writes from any of it."""
+"""Preflight brief: a Good / Caution / Blocked status from open reports and key features, with tagged
+reasons, a screen-reader string and sources. Rules only: no model is called, and nothing is written."""
 
-import pytest
 from sqlalchemy import func, select
 
-from app.core.config import get_settings
 from app.models import Evidence, Issue, IssueHistory, Place, PlaceAccessibility, Report, User
-from app.services.ai.classifier import reset_chain
-from tests.fake_openai import FakeOpenAI
 
-KEY = "test-key-a1b2c3d4e5f6abcdef"
 WRITE_TABLES = (Report, Issue, IssueHistory, Evidence, Place, PlaceAccessibility, User)
-
-
-@pytest.fixture
-def fake():
-    server = FakeOpenAI().start()
-    yield server
-    server.stop()
-
-
-@pytest.fixture
-def ai(fake, monkeypatch, fresh_chain):
-    s = get_settings()
-    monkeypatch.setattr(s, "gemini_api_key", KEY)
-    monkeypatch.setattr(s, "gemini_api_base", fake.base)
-    reset_chain()
-    fake.reply = "Blocked: a delivery truck is on the ramp [R1]."
-    return fake
 
 
 def _place(db, features: dict[str, str] | None = None, name: str = "Test Hall") -> Place:
@@ -64,7 +42,7 @@ def test_good_when_critical_features_are_available_and_nothing_is_open(client, d
     p = _place(db, {"step_free_entrance": "available", "ramp": "available", "elevator": "available"})
     body = _brief(client, p.id)
     assert body["status"] == "good" and body["status_label"] == "Good"
-    assert "No open reports" in body["reasons"][0]
+    assert body["reasons"][0].startswith("[P1] No open reports")
     assert "Preflight status: Good" in body["screen_reader"]
 
 
@@ -106,7 +84,7 @@ def test_caution_when_no_critical_feature_is_recorded(client, db):
     assert "No step-free entrance, ramp or elevator is recorded" in body["reasons"][0]
 
 
-def test_closed_and_duplicate_reports_do_not_count(client, db):
+def test_closed_reports_do_not_count(client, db):
     p = _place(db, {"step_free_entrance": "available", "ramp": "available", "elevator": "available"})
     r = _open_report(db, p)
     r.status = "resolved"
@@ -114,23 +92,22 @@ def test_closed_and_duplicate_reports_do_not_count(client, db):
     assert _brief(client, p.id)["status"] == "good"
 
 
-# ------------------------------------------------------------------ grounding and access
+# ------------------------------------------------------------------ tags, sources and access
 def test_reasons_cite_tags_that_appear_in_the_sources(client, db):
     p = _place(db, {"elevator": "unavailable"})
     r = _open_report(db, p)
     body = _brief(client, p.id)
     tags = {s["tag"]: s for s in body["sources"]}
     assert {"P1", "R1"} <= set(tags)
-    assert tags["R1"]["url"] == f"/reports/{r.id}"
+    assert tags["R1"]["url"] == f"/reports/{r.id}" and tags["P1"]["url"] == f"/places/{p.id}"
     for reason in body["reasons"]:
         if reason.startswith("["):
             assert reason[1:reason.index("]")] in tags
 
 
-def test_brief_is_public_and_calls_no_model(client, db, ai):
+def test_brief_is_public(client, db):
     p = _place(db, {"ramp": "available"})
-    _brief(client, p.id)
-    assert ai.chat_calls() == []
+    assert client.get(f"/api/places/{p.id}/preflight").status_code == 200
 
 
 def test_unknown_place_is_not_found(client):
@@ -144,33 +121,20 @@ def test_screen_reader_text_has_no_tags(client, db):
     assert "[P1]" not in body["screen_reader"]
 
 
-# ------------------------------------------------------------------ AI summary
-def test_ai_summary_is_grounded_and_cited(client, db, user_headers, ai):
-    p = _place(db, {"elevator": "unavailable"}, name="Hall With Lift")
-    _open_report(db, p)
-    body = client.post(f"/api/places/{p.id}/preflight/summary", headers=user_headers).json()
-    assert body["source"] == "gemini" and body["model"]
-    assert [s["tag"] for s in body["sources"]] == ["R1"]
-    system = ai.chat_calls()[-1]["body"]["messages"][0]["content"]
-    assert "Elevator: unavailable" in system and "Hall With Lift" in system
-
-
-def test_ai_summary_needs_sign_in(client, db, ai):
-    p = _place(db, {"ramp": "available"})
-    assert client.post(f"/api/places/{p.id}/preflight/summary").status_code == 401
-
-
-def test_without_cloud_the_summary_is_the_rule_based_one_and_labelled(client, db, user_headers):
-    p = _place(db, {"elevator": "unavailable"})
-    body = client.post(f"/api/places/{p.id}/preflight/summary", headers=user_headers).json()
-    assert body["source"] == "rules" and body["model"] is None
-    assert body["summary"].startswith("Blocked.")
-
-
-def test_preflight_writes_nothing(client, db, user_headers, ai):
+def test_preflight_writes_nothing(client, db):
     p = _place(db, {"elevator": "unavailable"})
     _open_report(db, p)
     before = _counts(db)
     _brief(client, p.id)
-    client.post(f"/api/places/{p.id}/preflight/summary", headers=user_headers)
     assert _counts(db) == before
+
+
+def test_there_is_no_ai_summary_endpoint(client, db, user_headers):
+    p = _place(db, {"ramp": "available"})
+    assert client.post(f"/api/places/{p.id}/preflight/summary", headers=user_headers).status_code == 404
+
+
+def test_summary_is_rules_text(client, db):
+    p = _place(db, {"elevator": "unavailable"})
+    body = _brief(client, p.id)
+    assert body["summary"].startswith("Blocked.")

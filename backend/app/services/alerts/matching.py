@@ -6,7 +6,12 @@ import hashlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from app.utils.geo import point_to_segment_m
+from datetime import timedelta
+
+from app.utils.geo import haversine_m, point_to_segment_m
+
+# Alerts near me: how long a shared location is kept.
+NEARBY_LOCATION_TTL = timedelta(hours=24)
 
 ROUTE_NEAR_M = 25.0  # a report this close to the walk affects it
 OUTAGE_NEAR_M = 50.0  # a place this close to the walk is on the way
@@ -44,3 +49,8 @@ def distance_to_route_m(lat: float, lng: float, coords: list[list[float]]) -> fl
 
 def near_route(lat: float, lng: float, coords: list[list[float]], radius_m: float) -> bool:
     return distance_to_route_m(lat, lng, coords) <= radius_m
+
+
+def within_radius(lat: float, lng: float, other_lat: float, other_lng: float, radius_m: float) -> bool:
+    """Straight-line distance between two points is at most the radius (haversine, metres)."""
+    return haversine_m(lat, lng, other_lat, other_lng) <= radius_m

@@ -83,12 +83,12 @@ def fresh_chain():
 
 
 @pytest.fixture(autouse=True)
-def fresh_chat_limiter():
-    from app.api.dependencies import chat_limiter
+def fresh_text_ai_limiter():
+    from app.api.dependencies import text_ai_limiter
 
-    chat_limiter.reset()
+    text_ai_limiter.reset()
     yield
-    chat_limiter.reset()
+    text_ai_limiter.reset()
 
 
 @pytest.fixture

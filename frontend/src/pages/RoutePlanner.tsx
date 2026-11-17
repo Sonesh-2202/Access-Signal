@@ -1,13 +1,13 @@
 import maplibregl, { type Map as MLMap, type Marker } from 'maplibre-gl'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { AskButton } from '@/components/assistant/AskButton'
 import { Button } from '@/components/common/Button'
 import { Checkbox, Segmented } from '@/components/common/Field'
 import { Icon } from '@/components/common/Icon'
 import { RiskBreakdown } from '@/components/routing/RiskBreakdown'
 import { Skeleton } from '@/components/common/Skeleton'
 import { SaveRoute } from '@/components/alerts/SaveRoute'
+import { DescribeRoute } from '@/components/routing/DescribeRoute'
 import { RideHandoffCard } from '@/components/rides/RideHandoffCard'
 import { Container, ErrorNote, PageHeader } from '@/components/layout/Layout'
 import { COLORS } from '@/components/map/config'
@@ -20,9 +20,7 @@ import { DEMO_TRIPS } from '@/data/mockManhattanData'
 import { prefersReducedMotion } from '@/utils/webgl'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { ApiError, api } from '@/services/api'
-import { openAssistant } from '@/stores/assistant'
-import { consumeRoutePlan, useRoutePlan } from '@/stores/routePlan'
-import type { GeocodeResult, Profile, RouteOption, RouteResponse } from '@/types'
+import type { GeocodeResult, Profile, RouteOption, RoutePlanResult, RouteResponse } from '@/types'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
 import { distance, humanize, minutes, pct, PROFILE_LABEL } from '@/utils/format'
@@ -127,23 +125,19 @@ export default function RoutePlanner() {
     }
   }
 
-  // A route the assistant planned: fill the form from it and run it, so the map shows the same route.
-  const pendingPlan = useRoutePlan((s) => s.pending)
-  useEffect(() => {
-    if (!pendingPlan) return
-    consumeRoutePlan()
-    if (pendingPlan.status !== 'planned' || !pendingPlan.start || !pendingPlan.end) return
-    const f = { lat: pendingPlan.start.lat, lng: pendingPlan.start.lng, label: pendingPlan.start.name }
-    const t = { lat: pendingPlan.end.lat, lng: pendingPlan.end.lng, label: pendingPlan.end.name }
-    const p = pendingPlan.intent.profile
-    const au = pendingPlan.intent.avoid_features.includes('unknown_data')
+  /** Show a route planned from plain words: fill the form from it and run it, so the map shows the same route. */
+  function showPlan(plan: RoutePlanResult) {
+    if (plan.status !== 'planned' || !plan.start || !plan.end) return
+    const f = { lat: plan.start.lat, lng: plan.start.lng, label: plan.start.name }
+    const t = { lat: plan.end.lat, lng: plan.end.lng, label: plan.end.name }
+    const p = plan.intent.profile
+    const au = plan.intent.avoid_features.includes('unknown_data')
     setFrom(f)
     setTo(t)
     setProfile(p)
     setAvoidUnknown(au)
     run(f, t, p, au)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPlan])
+  }
 
   // Auto-run when arriving with both ends in the URL.
   useEffect(() => {
@@ -318,14 +312,7 @@ export default function RoutePlanner() {
             </div>
           </form>
 
-          <div>
-            <Button type="button" variant="ghost" onClick={() => openAssistant({ kind: 'none' }, 'a walking route', 'plan_route')}>
-              Ask for a route
-            </Button>
-            <p className="mt-0.5 text-xs text-muted">
-              Describe the trip in your own words. The assistant plans it with this router and shows the result here.
-            </p>
-          </div>
+          <DescribeRoute onShow={showPlan} />
           <div className="border-t border-hair pt-2">
             <p className="meta">Or try a trip with a known barrier</p>
             <ul className="mt-1 flex flex-wrap gap-1">
@@ -350,16 +337,6 @@ export default function RoutePlanner() {
           {busy && !result && (
             <div aria-hidden>
               <Skeleton className="h-[120px] w-full" />
-            </div>
-          )}
-          {result && ran && (
-            <div className="mt-2">
-              <AskButton
-                context={{ kind: 'route', origin: [ran.f.lat, ran.f.lng], destination: [ran.t.lat, ran.t.lng], profile: ran.p, avoid_unknown: ran.au }}
-                label={`this ${PROFILE_LABEL[ran.p].toLowerCase()} route`}
-              >
-                Ask about this route
-              </AskButton>
             </div>
           )}
           {result && (

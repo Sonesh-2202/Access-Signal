@@ -10,6 +10,22 @@ const KIND_LABEL: Record<AlertKind, string> = {
   outage: 'Out of service',
   route_change: 'Route changed',
   reverify: 'Please check',
+  nearby_report: 'Nearby barrier',
+  nearby_outage: 'Nearby outage',
+}
+
+type Filter = 'all' | 'nearby' | 'routes'
+
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'nearby', label: 'Nearby' },
+  { value: 'routes', label: 'Saved routes' },
+]
+
+function inFilter(item: InboxItem, filter: Filter): boolean {
+  if (filter === 'all') return true
+  const nearby = item.kind === 'nearby_report' || item.kind === 'nearby_outage'
+  return filter === 'nearby' ? nearby : !nearby
 }
 
 /**
@@ -21,6 +37,7 @@ export function Inbox() {
   const headingId = useId()
   const [box, setBox] = useState<InboxData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
 
   const load = useCallback(() => {
     api
@@ -72,6 +89,15 @@ export function Inbox() {
           {error}
         </p>
       )}
+      {box && box.items.length > 0 && (
+        <div role="group" aria-label="Filter alerts" className="mt-1 flex flex-wrap gap-1">
+          {FILTERS.map((f) => (
+            <Button key={f.value} type="button" variant={filter === f.value ? 'primary' : 'ghost'} size="sm" aria-pressed={filter === f.value} onClick={() => setFilter(f.value)}>
+              {f.label}
+            </Button>
+          ))}
+        </div>
+      )}
       {box && box.items.length === 0 && (
         <p className="mt-1 text-sm text-muted">No alerts yet. Save a route to start watching it.</p>
       )}
@@ -83,7 +109,7 @@ export function Inbox() {
             </Button>
           </div>
           <ul className="mt-1 flex flex-col gap-1">
-            {box.items.map((item) => (
+            {box.items.filter((item) => inFilter(item, filter)).map((item) => (
               <li key={item.id} className="border-t border-hair pt-1 first:border-t-0 first:pt-0">
                 <p className="text-sm">
                   <span className="meta mr-1">{KIND_LABEL[item.kind]}</span>

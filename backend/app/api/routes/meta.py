@@ -47,12 +47,9 @@ def ai_status() -> dict:
         "fallback_enabled": s.ai_fallback_enabled,
         "mode": s.ai_provider,
         "byok": {"enabled": s.byok_enabled, "providers": list(CLOUD_PROVIDERS)},
-        # Server tier only. A user's own key (BYOK) can make chat work when this is false.
-        "chat": {
+        "text_ai": {
             "available": chain["available"],
             "tier": chain["provider"] if chain["available"] else None,
-            "read_only": True,
-            "rate_limit_per_minute": s.chat_rate_limit_per_minute,
-            "max_messages": s.chat_max_messages,
+            "rate_limit_per_minute": s.text_ai_rate_limit_per_minute,
         },
     }

@@ -11,7 +11,6 @@ import { Skeleton } from '@/components/common/Skeleton'
 import { Container, ErrorNote } from '@/components/layout/Layout'
 import { COLORS } from '@/components/map/config'
 import { MapView } from '@/components/map/MapView'
-import { AskButton } from '@/components/assistant/AskButton'
 import { CategoryGlyph, ReportRow } from '@/components/reports/ReportRow'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { catLabel, subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
@@ -75,11 +74,6 @@ export default function ReportDetailPage() {
               {r.status === 'resolved' && <Badge tone="outline">Resolved {r.resolved_at && timeAgo(r.resolved_at)}</Badge>}
               {r.status === 'duplicate' && <Badge tone="tint">Confirmation of another report</Badge>}
               {r.issue_status && <IssueStatusBadge status={r.issue_status} />}
-            </div>
-            <div className="mt-2">
-              <AskButton context={{ kind: 'report', id: r.id }} label={`report at ${r.address ?? 'this location'}`}>
-                Ask about this report
-              </AskButton>
             </div>
           </header>
 

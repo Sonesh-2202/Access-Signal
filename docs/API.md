@@ -18,7 +18,7 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | POST | `/api/auth/logout` | – | Revoke refresh token |
 | GET | `/api/auth/me` | user | Current user |
 | GET | `/api/meta/taxonomy` | – | Categories, subcategories, features, service area |
-| GET | `/api/meta/ai-status` | – | Cloud tiers and whether each has a key; which tier answers now; chat availability and limits |
+| GET | `/api/meta/ai-status` | – | Cloud tiers and whether each has a key; which tier answers now; availability and limits for route descriptions and translations |
 | POST | `/api/evidence` | user | Upload photo/voice (multipart: `file`, `transcription?`, `alt_text?`) |
 | GET | `/api/evidence/{id}/file` | – | Evidence file (attached evidence only) |
 | POST | `/api/reports/classify` | user | AI category suggestion |
@@ -41,11 +41,10 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | GET | `/api/issues/assignees`, `/api/issues/stats` | staff | Helpers |
 | GET | `/api/analytics/overview\|trends\|categories\|resolution\|heat\|coverage\|hotspots` | – | Public analytics |
 | POST | `/api/analytics/hotspots/recalculate` | staff | Re-cluster |
-| POST | `/api/chat` | user | Read-only assistant. Body `{messages[], context{kind, id? \| origin?, destination?, profile?}, language?}`. Optional `intent`: `"answer"` (default) or `"plan_route"`. With `plan_route`, the latest message is read as a route request and the response also has `route` (`RoutePlanResult`: `status` planned, place_not_found or no_route; resolved `start`/`end`; the router's `route`; `notes`; `unsupported`; `message`). `plan_route` returns 503 "Route planning needs cloud AI" with no cloud tier, and 422 when the model's reply isn't a valid route request. Returns `{answer, sources[], source, model, truncated, route?}`. Writes nothing. Accepts `X-AI-Provider` / `X-AI-Key` |
+| POST | `/api/routing/describe` | user (BYOK on AI) | Plan a route from one sentence `{text}`. A cloud model reads it into place names and limits, the router plans it, and a model explains it. Returns `{answer, source, model, route}`; `source` is null when no model wrote the explanation. Writes nothing. Without a cloud key: 503 |
 | GET | `/api/rides` | – | Curated accessible ride services: name, kind, phone, `tel` for tel: links, https link, source page. Public; no AI |
-| POST | `/api/rides/draft` | – (BYOK on AI) | Dispatcher message draft `{pickup, dropoff, barrier, passengers, use_ai}`. Returns `{text, source: ai \| template, preview: true, label, note}`. Writes nothing |
+| POST | `/api/rides/draft` | – | A fixed dispatcher message `{pickup, dropoff, barrier, passengers}` for review. Returns `{text, source: template, preview: true, label}`. No AI; writes nothing |
 | GET | `/api/places/{id}/preflight` | – | Good / Caution / Blocked with tagged reasons, sources and screen-reader text. Rules only |
-| POST | `/api/places/{id}/preflight/summary` | user (BYOK on AI) | Cited AI summary of the same records. `source` is `rules` when no cloud model answers |
 | POST | `/api/reports/translate` | user (BYOK on AI) | Translation draft `{text, target}` returns `{original, translation, target, source, model, label}`. Writes nothing |
 | GET | `/api/alerts/push` | – | `{enabled, public_key}`. Push is off unless VAPID keys are set |
 | POST | `/api/alerts/push-subscriptions` | user | Subscribe this browser `{endpoint (https), keys: {p256dh, auth}}` |
@@ -54,6 +53,9 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | PATCH / DELETE | `/api/alerts/corridors/{id}` | user | Change alert kinds, or remove a saved route |
 | GET | `/api/alerts/inbox` | user | `{unread, items}`, newest 50. Each item has kind, title, body, corridor name and read state |
 | POST | `/api/alerts/inbox/{id}/read`, `/api/alerts/inbox/read-all` | user | Mark one or all items read |
+| POST | `/api/alerts/nearby/now` | – | Open barriers and out-of-service features within 100, 250 or 500 m of a point `{lat, lng, radius_m}`. Public. Nothing is stored or sent. No AI |
+| GET / PUT | `/api/alerts/nearby/settings` | user | Alerts near me on or off, and the radius. Turning it off forgets the location |
+| PUT / DELETE | `/api/alerts/nearby/location` | user | Share `{lat, lng}` (kept to four decimal places, expires after 24 hours; needs alerts near me on), or forget it |
 
 - `POST /api/routing/route` also takes `prefer_reliable` (default `false`). When it is set, the first route includes `risk`: `high_risk_avoided`, `avoided_streets`, `extra_m`, `summary`, `formula` and `on_route`.
 

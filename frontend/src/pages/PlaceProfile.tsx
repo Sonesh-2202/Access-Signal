@@ -4,7 +4,6 @@ import { Badge, FeatureStatusMark, VerificationBadge } from '@/components/common
 import { Button, ButtonLink } from '@/components/common/Button'
 import { Icon } from '@/components/common/Icon'
 import { Skeleton } from '@/components/common/Skeleton'
-import { AskButton } from '@/components/assistant/AskButton'
 import { PreflightCard } from '@/components/places/PreflightCard'
 import { Container, ErrorNote } from '@/components/layout/Layout'
 import { placeType } from '@/components/places/PlaceBits'
@@ -68,7 +67,6 @@ export default function PlaceProfile() {
         <div className="flex flex-wrap items-end gap-1 md:col-span-4 md:justify-end">
           <ButtonLink to={`/report?lat=${p.lat}&lng=${p.lng}`} variant="primary">Report a problem here</ButtonLink>
           <ButtonLink to={`/route?to=${p.lat},${p.lng}`} variant="ghost">Route here</ButtonLink>
-          <AskButton context={{ kind: 'place', id: p.id }} label={p.name}>Ask about this place</AskButton>
         </div>
       </header>
       <PreflightCard placeId={p.id} />

@@ -33,6 +33,12 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Alerts near me. Off by default; the location is kept only while it is on, and expires.
+    nearby_alerts: Mapped[bool] = mapped_column(Boolean, default=False)
+    nearby_radius_m: Mapped[int] = mapped_column(Integer, default=100)
+    nearby_lat: Mapped[float | None] = mapped_column(Float)
+    nearby_lng: Mapped[float | None] = mapped_column(Float)
+    nearby_location_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     reports: Mapped[list["Report"]] = relationship(back_populates="user", foreign_keys="Report.user_id")
 

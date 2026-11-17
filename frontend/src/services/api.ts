@@ -3,17 +3,17 @@ import { beginWaking, configureWake, isDemo, markDemo, markLive, useDataSource, 
 import { readRefreshToken, useAuth } from '@/stores/auth'
 import * as local from './mockApi'
 import type {
-  ChatReply,
-  ChatRequest,
+  DescribeReply,
   AlertCorridor,
   AlertCorridorInput,
   PreflightBrief,
-  PreflightSummary,
   TranslateReply,
   AlertPreferences,
   AlertPushStatus,
   DispatcherDraft,
   Inbox,
+  NearbyOut,
+  NearbySettings,
   RideDraftRequest,
   RideOption,
   Classification,
@@ -231,13 +231,7 @@ export async function refreshSession(): Promise<boolean> {
 }
 
 /** Only these endpoints can call a model, so only they ever see a personal AI key. */
-const AI_PATHS = [
-  /^\/api\/reports\/classify$/,
-  /^\/api\/chat$/,
-  /^\/api\/rides\/draft$/,
-  /^\/api\/reports\/translate$/,
-  /^\/api\/places\/[^/]+\/preflight\/summary$/,
-]
+const AI_PATHS = [/^\/api\/reports\/classify$/, /^\/api\/routing\/describe$/, /^\/api\/reports\/translate$/]
 
 type RequestOpts = { body?: unknown; query?: Query; form?: FormData; signal?: AbortSignal }
 
@@ -380,7 +374,6 @@ export const api = {
   rideDraft: (body: RideDraftRequest) => request<DispatcherDraft>('POST', '/api/rides/draft', { body }),
   // Preflight brief (AI-5). The status is rules-based and public; the summary is signed in and cited.
   preflight: (placeId: string) => request<PreflightBrief>('GET', `/api/places/${placeId}/preflight`),
-  preflightSummary: (placeId: string) => request<PreflightSummary>('POST', `/api/places/${placeId}/preflight/summary`),
   // Multilingual reporting (AI-6). A preview to review. Nothing is filed by this call.
   translate: (body: { text: string; target: string }) => request<TranslateReply>('POST', '/api/reports/translate', { body }),
   // route alerts (AI-4). Opt-in and signed in. Nothing is sent without a saved route and a push subscription.
@@ -397,17 +390,18 @@ export const api = {
   inbox: () => request<Inbox>('GET', '/api/alerts/inbox'),
   markRead: (id: string) => request<void>('POST', `/api/alerts/inbox/${id}/read`),
   markAllRead: () => request<void>('POST', '/api/alerts/inbox/read-all'),
-  // assistant (read-only). No local fallback: the demo dataset can't hold a conversation.
-  chat: async (body: ChatRequest): Promise<ChatReply> => {
-    try {
-      return await request<ChatReply>('POST', '/api/chat', { body })
-    } catch (e) {
-      if (e instanceof TypeError) throw new ApiError(503, 'The assistant needs the live AccessSignal service, which isn’t reachable right now.', false)
-      throw e
-    }
-  },
+  // Alerts near me (no AI). The one-off check is public and stores nothing; the rest is signed in.
+  nearbyNow: (body: { lat: number; lng: number; radius_m: number }) =>
+    request<NearbyOut>('POST', '/api/alerts/nearby/now', { body }),
+  nearbySettings: () => request<NearbySettings>('GET', '/api/alerts/nearby/settings'),
+  setNearbySettings: (body: { enabled: boolean; radius_m: number }) =>
+    request<NearbySettings>('PUT', '/api/alerts/nearby/settings', { body }),
+  shareNearbyLocation: (lat: number, lng: number) =>
+    request<NearbySettings>('PUT', '/api/alerts/nearby/location', { body: { lat, lng } }),
+  forgetNearbyLocation: () => request<void>('DELETE', '/api/alerts/nearby/location'),
+  // Describe a route in plain words (AI). Signed in. The router plans the route; the model only reads and explains it.
+  describeRoute: (text: string) => request<DescribeReply>('POST', '/api/routing/describe', { body: { text } }),
 }
-
 /** Forward and reverse geocoding through the public Nominatim service (OSM).
  *  Usage policy: max 1 request/second, results cached, bounded to the service area. */
 const geoCache = new Map<string, GeocodeResult[]>()

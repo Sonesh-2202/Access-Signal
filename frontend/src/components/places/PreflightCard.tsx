@@ -1,11 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button } from '@/components/common/Button'
 import { api } from '@/services/api'
-import { useAuth } from '@/stores/auth'
-import type { PreflightBrief, PreflightSummary } from '@/types'
-import { aiSourceShort } from '@/utils/aiSource'
-import { announce } from '@/utils/announce'
+import type { PreflightBrief } from '@/types'
 import { cx } from '@/utils/cx'
 
 const STATUS_NOTE: Record<PreflightBrief['status'], string> = {
@@ -15,40 +11,22 @@ const STATUS_NOTE: Record<PreflightBrief['status'], string> = {
 }
 
 /**
- * The preflight brief: one status, its reasons with the record each one comes from, and an
- * optional AI summary. The status and the reasons come from the rules and are public. The AI
- * summary is written only from the same records, and it says which source wrote it.
+ * The preflight brief: one status and the reasons behind it, each with the record it comes from.
+ * It is worked out from rules alone, so anyone can check it against the open reports and features.
  */
 export function PreflightCard({ placeId }: { placeId: string }) {
-  const user = useAuth((s) => s.user)
   const headingId = useId()
   const srId = useId()
   const [brief, setBrief] = useState<PreflightBrief | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [summary, setSummary] = useState<PreflightSummary | null>(null)
-  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     setBrief(null)
-    setSummary(null)
     api
       .preflight(placeId)
       .then(setBrief)
       .catch((e: Error) => setError(e.message))
   }, [placeId])
-
-  async function writeSummary() {
-    setBusy(true)
-    try {
-      const s = await api.preflightSummary(placeId)
-      setSummary(s)
-      announce('Summary ready')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   if (error) {
     return (
@@ -81,6 +59,7 @@ export function PreflightCard({ placeId }: { placeId: string }) {
         </p>
       </div>
       <p className="mt-0.5 text-sm text-muted">{STATUS_NOTE[brief.status]}</p>
+      <p className="mt-0.5 text-xs text-muted">Worked out from rules: open reports and the recorded features. No AI is used.</p>
       <p id={srId} className="sr-only">
         {brief.screen_reader}
       </p>
@@ -108,28 +87,6 @@ export function PreflightCard({ placeId }: { placeId: string }) {
           ))}
         </p>
       )}
-
-      <div className="mt-2 border-t border-hair pt-1">
-        {summary ? (
-          <div>
-            <p className="meta">
-              Summary · {summary.source === 'rules' ? 'Rule-based (no cloud AI answered)' : aiSourceShort(summary.source)}
-            </p>
-            <p className="mt-0.5 text-sm">{summary.summary}</p>
-          </div>
-        ) : user ? (
-          <Button type="button" variant="ghost" size="sm" busy={busy} onClick={writeSummary}>
-            Write a short summary with AI
-          </Button>
-        ) : (
-          <p className="text-sm text-muted">
-            <Link to="/login" className="underline">
-              Sign in
-            </Link>{' '}
-            for a short AI summary of these records.
-          </p>
-        )}
-      </div>
     </section>
   )
 }

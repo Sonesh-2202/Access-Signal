@@ -10,7 +10,7 @@ from app.services.alerts.push import send_push
 
 
 def notify(db: Session, user_id: str, *, kind: str, title: str, body: str, dedupe_key: str,
-           corridor_id: str | None = None) -> Notification | None:
+           corridor_id: str | None = None, url: str = "settings#alerts") -> Notification | None:
     """Returns the new inbox item, or None when this event was already sent to this user."""
     exists = db.scalar(select(Notification.id).where(Notification.user_id == user_id,
                                                      Notification.dedupe_key == dedupe_key))
@@ -22,7 +22,7 @@ def notify(db: Session, user_id: str, *, kind: str, title: str, body: str, dedup
     db.flush()
     subs = db.scalars(select(PushSubscription).where(PushSubscription.user_id == user_id,
                                                      PushSubscription.revoked_at.is_(None))).all()
-    payload = {"title": item.title, "body": item.body, "url": "settings#alerts", "kind": kind}
+    payload = {"title": item.title, "body": item.body, "url": url, "kind": kind}
     now = utcnow()
     for sub in subs:
         if send_push(sub, payload) == "gone":

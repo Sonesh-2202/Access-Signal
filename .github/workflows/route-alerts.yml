@@ -1,0 +1,41 @@
+# Scheduled alert checks: saved routes, and alerts near me. Runs `python -m scripts.check_corridors`.
+#
+# Off by default, so forks and the public demo don't run it. To enable it, set:
+#   repository variable  ROUTE_ALERTS_ENABLED=true
+#   repository secret    DATABASE_URL          (the same database the API uses)
+#   repository secret    VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY   (from `python -m scripts.generate_vapid`)
+#   repository secret    VAPID_SUBJECT         (optional, a mailto: address; defaults below)
+# Without the VAPID keys the job still writes inbox items. Only the browser push is skipped.
+# No cloud AI key is needed. The job prints counts only.
+# GitHub may delay scheduled runs by several minutes; 15-minute spacing leaves margin.
+name: Route alerts
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  check:
+    if: vars.ROUTE_ALERTS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || 'mailto:alerts@localhost' }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Refuse to run without a database
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::error::Set the DATABASE_URL secret"; exit 1; fi
+      - name: Run alert checks
+        working-directory: backend
+        run: python -m scripts.check_corridors

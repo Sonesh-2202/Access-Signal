@@ -6,7 +6,7 @@
 
 ### Know which ramps, elevators and curb cuts are working before you leave.
 
-Community-reported accessibility conditions for Midtown and Lower Manhattan, checked against each other, scored for confidence, and routed around.
+Community-reported accessibility conditions for Midtown and Lower Manhattan, checked against each other, scored by rule, and routed around. The alert that matters most needs no AI at all: a barrier or an out-of-service elevator recorded near where you are is shown to you, with its distance.
 
 <br>
 
@@ -62,15 +62,10 @@ Each report carries a confidence score built from evidence, independent corrobor
 </td>
 <td width="50%" valign="top">
 
-### Cloud AI, with a read-only assistant
-Photos and text are classified by a cloud model: Gemini or Groq on the server's free-tier keys, or your own key from Settings. A read-only assistant answers questions about the report, place or route on screen, and cites the records it used. It can't file, change or verify anything. The same panel can plan a walking route from a request such as "step-free from Union Square to Grand Central": the model reads the request, the place names are resolved from the places list, and the existing router draws the route. Without a cloud key the planner says it needs AI, and the route planner page still works without it. When no cloud model answers, keyword rules take over, and every result says which one produced it.
+### Know what is broken near you, and where AI is used
+Turn on **alerts near me** and AccessSignal tells you when an open barrier, or a ramp, elevator or step-free entrance marked out of service, is recorded within 100, 250 or 500 metres. This is plain distance on stored records, with no AI. Your location is kept only while alerts are on, and for 24 hours at most. Push works where your browser allows it, and every alert is also in your inbox.
 
-Four more features work on top of the same rules. Each one is optional, and each one says what it used.
-- **Accessible ride when no step-free route exists.** A short list of local wheelchair-accessible services (phone numbers checked against their official pages), and a dispatcher message to read or copy. The message is a draft for the person to review. The app never books a ride or sends the message.
-- **Reliable routes.** An opt-in option that keeps the route away from streets with hotspots and open reports. It says which corridors it avoided and what the detour costs. The formula is on the methodology page.
-- **Route alerts.** Save a route and choose what to hear about. Alerts appear in the inbox, and push works when the browser allows it. Alerts are off until someone saves a route and turns them on.
-- **Preflight and translation.** A Good, Caution or Blocked status for each place, with the record behind each reason. A report can be drafted in another language and reviewed before filing, and the original text is kept.
-
+AI is used in three places only. Photos and text are classified by a cloud model when one is available (Gemini or Groq on the server's free-tier keys, or your own key from Settings). Translation drafts a report in another language for you to review before filing. Describing a route in plain words turns one sentence into a route with place names, and the router plans it. Keyword rules take over when no cloud model answers, and every result says which one produced it. Routing, scores, hotspots, preflight and alerts never use AI.
 
 </td>
 </tr>
@@ -113,7 +108,7 @@ flowchart LR
         UI["React 18 + Vite<br/>Tailwind, custom SVG icons"]
         Map["MapLibre GL<br/>vector map, heat, hotspots"]
         Three["Three.js<br/>entrance model, lazy-loaded"]
-        Chat["Chat box<br/>read-only assistant, cites sources"]
+        Near["Near you now<br/>alerts near me, inbox, push"]
     end
 
     subgraph API["FastAPI backend"]
@@ -121,7 +116,8 @@ flowchart LR
         Route["Routing engine<br/>A* over NetworkX graph"]
         Intel["Intelligence<br/>duplicates · confidence · DBSCAN hotspots"]
         AI["AI classifier<br/>BYOK, then cloud tiers, then keyword rules"]
-        ChatAPI["Chat service<br/>POST /api/chat, reads public data only"]
+        Describe["Route description<br/>POST /api/routing/describe, plans with the router"]
+        AlertsAPI["Alerts<br/>nearby check, saved routes, inbox; no AI"]
     end
 
     subgraph Storage["Storage"]
@@ -144,18 +140,19 @@ flowchart LR
 
     UI --> Map
     UI --> Three
-    UI --> Chat
+    UI --> Near
     UI -- "/api" --> Routes
-    Chat -- "POST /api/chat" --> ChatAPI
+    Near -- "POST /api/alerts/nearby/now" --> AlertsAPI
     Pages -. "serves" .-> UI
     Routes --> Route
     Routes --> Intel
     Routes --> AI
+    Routes --> Describe
     AI -- "OpenAI-compatible,<br/>server key or BYOK" --> CloudAI
-    ChatAPI -- "plain text; route requests use a schema" --> CloudAI
+    Describe -- "one sentence in; schema-checked route intent" --> CloudAI
     AI --> KW
     Routes --> DB
-    ChatAPI -- "read only" --> DB
+    AlertsAPI -- "reads records; stores an opt-in location only" --> DB
     Routes --> Disk
     Routes -.-> Supa
     Routes -.-> Bucket
@@ -169,7 +166,7 @@ flowchart LR
 | 3D | Three.js with React Three Fiber | Used selectively, with a 2D fallback when WebGL is missing |
 | Backend | FastAPI, SQLAlchemy 2, Pydantic | Typed endpoints and generated OpenAPI docs |
 | Routing | NetworkX A* with per-profile costs | Transparent weights, so every route can explain itself |
-| AI | Gemini, Groq and Nebius through one OpenAI-compatible client, with a bring-your-own-key option | Classification uses a schema and the taxonomy; the chat assistant uses plain text and never writes. Keyword rules keep the app working with no key |
+| AI | Gemini, Groq and Nebius through one OpenAI-compatible client, with a bring-your-own-key option | Classification reads messy text and photos with a schema and the taxonomy. Translation and route descriptions use plain text. Routing, scores, hotspots, preflight and alerts use no AI |
 | Hosting | GitHub Pages, Render, Supabase (free tiers) | $0 demo. Auth stays in FastAPI; Supabase is Postgres and Storage only. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Data | OpenStreetMap via Overpass (ODbL) | Real pedestrian network, not a synthetic grid |
 
@@ -219,7 +216,7 @@ cd backend; .\.venv\Scripts\python.exe -m scripts.seed_demo --reset
 
 <br>
 
-The app runs without any AI key: suggestions come from keyword rules, labelled *Keyword rules, AI offline*, and the assistant is offline. To turn on cloud models, add a key to `.env` at the repository root:
+The app runs without any AI key: suggestions come from keyword rules, labelled *Keyword rules, AI offline*. Translation and route descriptions are unavailable. The route planner, alerts near me, scores and hotspots all work. To turn on cloud models, add a key to `.env` at the repository root:
 
 | Provider | Variable | Get a key | Photos |
 |---|---|---|---|
@@ -249,8 +246,8 @@ Then open http://localhost:3000. The Postgres path (Alembic migrations and seedi
 
 | Suite | Count | Command | Covers |
 |---|---:|---|---|
-| Backend | 198 | `pytest` | Route planning from a request (schema-checked intent, place resolution, no writes, offline message), API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), cloud providers and keyword fallback against a fake OpenAI server, BYOK, the read-only chat (grounding, no writes, limits, key redaction), CORS, deploy config |
-| Frontend unit | 85 | `npm test` | Route planning in the assistant (intent, planned-route card, Apply to map, axe), form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling, the assistant panel (focus, Escape, sources, read-only notice) |
+| Backend | 185 | `pytest` | Alerts near me (distance matching, opt-in location, 24-hour expiry, dedupe, mocked push with no personal text), saved-route alerts, corridor risk (Hypothesis bounds), route description (schema checks, no writes, offline message), translation, rides and preflight (rules), API flows, issue state machine, evidence privacy, cloud providers and keyword fallback against a fake OpenAI server, BYOK, CORS, deploy config |
+| Frontend unit | 86 | `npm test` | Nearby card and alerts settings (permission states, one location read per press, no loops), inbox filters, route description, reliable-route breakdown, rides, preflight, translation, form controls, password rules, legal pages, route guards, demo dataset, cold-start banner, BYOK key handling, axe checks |
 | End-to-end | 31 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 9 pages, overflow at desktop, mobile and 390 px. Point `E2E_BASE_URL` at the live site to run it there |
 
 The E2E suite files a real report and edits an issue, so reseed afterwards.
@@ -273,8 +270,8 @@ The E2E suite files a real report and edits an issue, so reseed afterwards.
 
 - **Zero running cost.** Nothing needs a key to run. The hosted demo uses free tiers only; anyone can bring their own AI key.
 - **Explainable by default.** Every score, route and hotspot shows its reasons.
-- **No single channel.** The map always has a list beside it, charts have tables, routes have written directions, and the assistant is an addition to the report form, not a replacement.
-- **Human decisions stay human.** The assistant reads and explains; it can't file, change, verify or resolve anything. AI drafts fill a preview that a person must choose to use and send. Staff confirm, assign and resolve.
+- **No single channel.** The map always has a list beside it, charts have tables, routes have written directions, and the route planner's description box sits beside the form, not in place of it.
+- **Human decisions stay human.** AI reads messy text and can draft a translation, and a person reviews it before anything is filed. Routes, scores, hotspots and alerts are rules. Staff confirm, assign and resolve.
 
 ## Licence
 

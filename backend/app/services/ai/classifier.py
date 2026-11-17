@@ -193,7 +193,7 @@ def log_startup_status() -> None:
         log.info("AI tier %s: %s (model %s)", t["label"], "key configured" if t["available"] else "no key", t["model"])
     if not chain.status()["available"]:
         log.warning("AI: no cloud API key is configured (GEMINI_API_KEY, GROQ_API_KEY or NEBIUS_API_KEY). "
-                    "Reports will be labelled as keyword rules and the chat assistant will be offline "
+                    "Reports will be labelled as keyword rules and route description and translation will be unavailable "
                     "unless a user supplies their own key.")
 
 

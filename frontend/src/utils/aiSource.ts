@@ -21,8 +21,6 @@ export function aiSourceShort(source: AISource | undefined): string {
   return `Cloud AI (${NAMES[source]})`
 }
 
-/** Shown under the assistant's answers. */
-export const chatPrivacyNote = 'Answers come from a cloud model and are grounded in the data on this page.'
 
 /** Shown with a planned route: the router computes the path, the AI only reads the request and explains it. */
 export const routeSourceNote =

@@ -2,13 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import chat_request, current_user
 from app.api.serializers import place_detail, place_summary
 from app.core.database import get_db
-from app.models import Place, Report, User
-from app.schemas import PlaceDetail, PlaceSummary, PreflightOut, PreflightSummaryOut
-from app.services.ai.preflight import ai_summary, build_brief, rules_summary, screen_reader_text
-from app.services.ai.providers import Provider
+from app.models import Place, Report
+from app.schemas import PlaceDetail, PlaceSummary, PreflightOut
+from app.services.preflight import build_brief, rules_summary, screen_reader_text
 
 router = APIRouter(prefix="/api/places", tags=["places"])
 
@@ -83,17 +81,8 @@ def _place_or_404(db: Session, place_id: str) -> Place:
 
 @router.get("/{place_id}/preflight", response_model=PreflightOut)
 def preflight(place_id: str, db: Session = Depends(get_db)) -> PreflightOut:
-    """The Good / Caution / Blocked status and its reasons. Rules only: public, free and read-only."""
+    """The Good / Caution / Blocked status and its reasons, from rules only. Public, free and read-only."""
     brief = build_brief(db, _place_or_404(db, place_id))
     return PreflightOut(place_id=brief.place.id, place_name=brief.place.name, status=brief.status,
                         status_label=brief.label, reasons=brief.reasons, summary=rules_summary(brief),
-                        source="rules", sources=brief.sources, screen_reader=screen_reader_text(brief))
-
-
-@router.post("/{place_id}/preflight/summary", response_model=PreflightSummaryOut)
-def preflight_summary(place_id: str, _: User = Depends(current_user), byok: Provider | None = Depends(chat_request),
-                      db: Session = Depends(get_db)) -> PreflightSummaryOut:
-    """A short AI summary of the same facts, cited by tag. Signed in, rate limited, read-only."""
-    brief = build_brief(db, _place_or_404(db, place_id))
-    summary, source, model, sources = ai_summary(db, brief, byok)
-    return PreflightSummaryOut(summary=summary, source=source, model=model, sources=sources)
+                        sources=brief.sources, screen_reader=screen_reader_text(brief))

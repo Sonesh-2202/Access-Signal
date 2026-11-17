@@ -4,6 +4,7 @@ import { Field, Select } from '@/components/common/Field'
 import { LANGUAGES, preferredLanguage, setPreferredLanguage } from '@/utils/language'
 import { useState } from 'react'
 import { AlertSettings } from '@/components/alerts/AlertSettings'
+import { NearbySettings } from '@/components/alerts/NearbySettings'
 import { AIKeyPanel } from '@/components/settings/AIKeyPanel'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { api } from '@/services/api'
@@ -18,11 +19,11 @@ export default function Settings() {
   const status = useAsync(() => api.aiStatus(), [])
   const ownKey = useAIKey((s) => s.value)
   const tiers = status.data?.tiers?.length ? status.data.tiers : [KEYWORD_TIER]
-  const chat = status.data?.chat
+  const textAI = status.data?.text_ai
   return (
     <Container className="pb-8">
-      <PageHeader eyebrow="Settings" title="AI models and chat">
-        Which cloud model answers, how the assistant works, and how to use your own key.
+      <PageHeader eyebrow="Settings" title="AI models">
+        Which cloud model answers, what the AI is used for, and how to use your own key.
       </PageHeader>
       <div className="grid gap-6 pt-4 md:grid-cols-12">
         <section aria-labelledby="tiers-h" className="md:col-span-5">
@@ -65,17 +66,17 @@ export default function Settings() {
           )}
 
           <div className="mt-4 border-t border-hair pt-2">
-            <h2 className="text-xl leading-snug">Assistant</h2>
+            <h2 className="text-xl leading-snug">Describing routes and translating</h2>
             <p className="mt-1 text-sm">
               {ownKey
-                ? `Chat uses your ${ownKey.provider} key in this tab.`
-                : chat?.available
-                  ? `Chat uses ${aiSourceShort(chat.tier ?? undefined)} on this server.`
-                  : 'Chat needs an AI key. Add your own below, or ask the site operator to set one.'}
+                ? `These use your ${ownKey.provider} key in this tab.`
+                : textAI?.available
+                  ? `These use ${aiSourceShort(textAI.tier ?? undefined)} on this server.`
+                  : 'Describing a route and translating a draft need an AI key. Add your own below, or ask the site operator to set one.'}
             </p>
             <p className="mt-1 text-sm text-muted">
-              The assistant can read reports, places and routes, and answer questions. It cannot file reports, change statuses or take any other action.
-              Each person is limited to {chat?.rate_limit_per_minute ?? 10} questions a minute.
+              A route description reads one sentence and returns a route the router plans. A translation returns a draft you review before you file it. Neither can file, change or take any other action.
+              Each person is limited to {textAI?.rate_limit_per_minute ?? 10} requests a minute.
             </p>
           </div>
         </section>
@@ -88,7 +89,7 @@ export default function Settings() {
           <div className="mt-4 border-t border-hair pt-2">
             <h2 className="text-xl leading-snug">What is sent, and where</h2>
             <p className="mt-1 text-sm">
-              Chat questions, the report or place or route they are about, and any descriptions or photos you attach to a report are sent to the cloud
+              Route descriptions and translation drafts, the text you type for them, and any descriptions or photos you attach to a report are sent to the cloud
               provider that answers. That is your own key’s provider when you add one, otherwise the first server tier with a key.
               AccessSignal doesn’t store your key.
             </p>
@@ -101,6 +102,7 @@ export default function Settings() {
         <p className="mt-1 max-w-[60ch] text-sm text-muted">
           Save a route and AccessSignal tells you when a confirmed barrier or an out-of-service feature affects it. Alerts are opt-in, and each one says only what changed. Push alerts need your browser's permission. The inbox works without it.
         </p>
+        <NearbySettings />
         <AlertSettings />
         <Inbox />
       </section>
@@ -108,7 +110,7 @@ export default function Settings() {
   )
 }
 
-/** The language for translations and assistant replies. Stored on this device only. */
+/** The default language for translating a report draft. Stored on this device only. */
 function LanguagePanel() {
   const [lang, setLang] = useState<string>(preferredLanguage() ?? 'en')
   return (
@@ -117,7 +119,7 @@ function LanguagePanel() {
         Language
       </h2>
       <p className="mt-1 max-w-[60ch] text-sm text-muted">
-        The default language for translating a report and for the assistant’s replies. It is saved on this device only.
+        The default language for translating a report draft. It is saved on this device only.
         Nothing is sent until you ask for a translation or an answer.
       </p>
       <div className="mt-2 max-w-[320px]">

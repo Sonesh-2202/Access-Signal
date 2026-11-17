@@ -1,38 +1,17 @@
-"""Accessible ride handoff (AI-3): curated list, dispatcher draft preview, graceful fallbacks.
-No external ride service is called. AI drafts go to the local fake OpenAI server."""
+"""Accessible ride handoff: the curated list and the fixed dispatcher message. No external ride service
+and no model is called. Nothing is written."""
 
 import json
 from pathlib import Path
 
-import pytest
 from sqlalchemy import func, select
 
-from app.core.config import get_settings
 from app.models import Evidence, Issue, IssueHistory, Place, PlaceAccessibility, Report, User
-from app.services.ai.classifier import reset_chain
-from app.services.ai.ride import RIDE_DATA, load_rides
-from tests.fake_openai import FakeOpenAI
+from app.services.rides import RIDE_DATA, load_rides
 
-KEY = "test-key-a1b2c3d4e5f6abcdef"
 WRITE_TABLES = (Report, Issue, IssueHistory, Evidence, Place, PlaceAccessibility, User)
 DRAFT = {"pickup": "Union Square", "dropoff": "Grand Central Terminal", "barrier": "missing curb cut",
          "passengers": 1}
-
-
-@pytest.fixture
-def fake():
-    server = FakeOpenAI().start()
-    yield server
-    server.stop()
-
-
-@pytest.fixture
-def ai(fake, monkeypatch, fresh_chain):
-    s = get_settings()
-    monkeypatch.setattr(s, "gemini_api_key", KEY)
-    monkeypatch.setattr(s, "gemini_api_base", fake.base)
-    reset_chain()
-    return fake
 
 
 def _counts(db) -> dict[str, int]:
@@ -74,15 +53,14 @@ def test_missing_or_broken_file_gives_no_rides(tmp_path: Path):
     assert RIDE_DATA.name == "accessible_rides.json"
 
 
-def test_list_endpoint_is_public_and_makes_no_model_call(client, fake):
+def test_list_endpoint_is_public(client):
     r = client.get("/api/rides")
     assert r.status_code == 200
     assert {x["id"] for x in r.json()} == {"aar", "accessible-dispatch"}
-    assert fake.calls == []
 
 
 # ------------------------------------------------------------------ draft
-def test_template_draft_is_a_labelled_preview_with_the_facts(client, db, user_headers):
+def test_draft_is_a_labelled_preview_with_the_facts(client, db):
     counts = _counts(db)
     body = client.post("/api/rides/draft", json=DRAFT).json()
     assert body["source"] == "template" and body["preview"] is True
@@ -98,40 +76,11 @@ def test_passenger_count_is_in_the_draft(client):
     assert "Passengers: 2." in text
 
 
-def test_ai_draft_is_used_when_it_keeps_the_facts(client, ai):
-    ai.reply = ("Please send an accessible taxi from Union Square to Grand Central Terminal. The passenger "
-                "uses a wheelchair and needs a ramp or lift. The walk has a missing curb cut. Thank you.")
+def test_draft_has_no_ai_path(client):
     body = client.post("/api/rides/draft", json={**DRAFT, "use_ai": True}).json()
-    assert body["source"] == "ai" and body["model"] == get_settings().gemini_model
-    assert body["preview"] is True and "Grand Central Terminal" in body["text"]
-
-
-def test_ai_draft_missing_a_fact_falls_back_to_the_template(client, ai):
-    ai.reply = "Please send a taxi to Union Square. Thank you."  # no drop-off, no wheelchair
-    body = client.post("/api/rides/draft", json={**DRAFT, "use_ai": True}).json()
-    assert body["source"] == "template"
-    assert "did not include every required fact" in body["note"]
-
-
-def test_ai_requested_without_a_cloud_tier_uses_the_template(client):
-    body = client.post("/api/rides/draft", json={**DRAFT, "use_ai": True}).json()
-    assert body["source"] == "template"
-    assert "No cloud AI is available" in body["note"]
-
-
-def test_ai_draft_with_a_provider_error_uses_the_template(client, ai):
-    ai.status = 500
-    body = client.post("/api/rides/draft", json={**DRAFT, "use_ai": True}).json()
-    assert body["source"] == "template"
-
-
-def test_draft_without_ai_makes_no_model_call(client, ai):
-    client.post("/api/rides/draft", json=DRAFT)
-    assert ai.chat_calls() == []
+    assert body["source"] == "template"  # the unknown field is ignored; there is no model call to make
 
 
 def test_draft_input_is_bounded(client):
-    r = client.post("/api/rides/draft", json={**DRAFT, "passengers": 9})
-    assert r.status_code == 422
-    r = client.post("/api/rides/draft", json={**DRAFT, "barrier": "x" * 300})
-    assert r.status_code == 422
+    assert client.post("/api/rides/draft", json={**DRAFT, "passengers": 9}).status_code == 422
+    assert client.post("/api/rides/draft", json={**DRAFT, "barrier": "x" * 300}).status_code == 422
