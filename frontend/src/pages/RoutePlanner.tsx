@@ -5,7 +5,10 @@ import { AskButton } from '@/components/assistant/AskButton'
 import { Button } from '@/components/common/Button'
 import { Checkbox, Segmented } from '@/components/common/Field'
 import { Icon } from '@/components/common/Icon'
+import { RiskBreakdown } from '@/components/routing/RiskBreakdown'
 import { Skeleton } from '@/components/common/Skeleton'
+import { SaveRoute } from '@/components/alerts/SaveRoute'
+import { RideHandoffCard } from '@/components/rides/RideHandoffCard'
 import { Container, ErrorNote, PageHeader } from '@/components/layout/Layout'
 import { COLORS } from '@/components/map/config'
 import { LocationSearch } from '@/components/map/LocationSearch'
@@ -16,7 +19,9 @@ import { placeMarkers, syncReportMarkers } from '@/components/map/pulseMarkers'
 import { DEMO_TRIPS } from '@/data/mockManhattanData'
 import { prefersReducedMotion } from '@/utils/webgl'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
-import { api } from '@/services/api'
+import { ApiError, api } from '@/services/api'
+import { openAssistant } from '@/stores/assistant'
+import { consumeRoutePlan, useRoutePlan } from '@/stores/routePlan'
 import type { GeocodeResult, Profile, RouteOption, RouteResponse } from '@/types'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
@@ -36,6 +41,13 @@ const PROFILES: { value: Profile; label: string; hint: string }[] = [
   { value: 'low_vision', label: 'Low vision', hint: 'Prefers crossings with audible signals and tactile paving, and lit paths.' },
   { value: 'standard', label: 'Walking', hint: 'Shortest path. Reported barriers count only slightly.' },
 ]
+
+/** The engine's refusal when no path meets the profile. Returns the barrier it names, or null for any other error. */
+function noStepFreeRouteBarrier(e: Error): string | null {
+  if (!(e instanceof ApiError) || e.status !== 422 || !e.message.startsWith('No route meets')) return null
+  const m = e.message.match(/Blocked by: (.*)$/)
+  return m ? m[1] : 'no step-free path between these points'
+}
 
 let drawRaf = 0
 
@@ -75,6 +87,7 @@ export default function RoutePlanner() {
   const [to, setTo] = useState<Pt | null>(parsePt(params.get('to')))
   const [profile, setProfile] = useState<Profile>((params.get('profile') as Profile) || 'wheelchair')
   const [avoidUnknown, setAvoidUnknown] = useState(false)
+  const [preferReliable, setPreferReliable] = useState(false)
   const [pick, setPick] = useState<'from' | 'to' | null>(null)
   const [result, setResult] = useState<RouteResponse | null>(null)
   /** The inputs that produced `result`, which can differ from the form if the user edited it since. */
@@ -98,7 +111,7 @@ export default function RoutePlanner() {
     setBusy(true)
     setError(null)
     try {
-      const r = await api.route([f.lat, f.lng], [t.lat, t.lng], p, au)
+      const r = await api.route([f.lat, f.lng], [t.lat, t.lng], p, au, preferReliable)
       setResult(r)
       setRan({ f, t, p, au })
       setSelected(0)
@@ -113,6 +126,24 @@ export default function RoutePlanner() {
       setBusy(false)
     }
   }
+
+  // A route the assistant planned: fill the form from it and run it, so the map shows the same route.
+  const pendingPlan = useRoutePlan((s) => s.pending)
+  useEffect(() => {
+    if (!pendingPlan) return
+    consumeRoutePlan()
+    if (pendingPlan.status !== 'planned' || !pendingPlan.start || !pendingPlan.end) return
+    const f = { lat: pendingPlan.start.lat, lng: pendingPlan.start.lng, label: pendingPlan.start.name }
+    const t = { lat: pendingPlan.end.lat, lng: pendingPlan.end.lng, label: pendingPlan.end.name }
+    const p = pendingPlan.intent.profile
+    const au = pendingPlan.intent.avoid_features.includes('unknown_data')
+    setFrom(f)
+    setTo(t)
+    setProfile(p)
+    setAvoidUnknown(au)
+    run(f, t, p, au)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPlan])
 
   // Auto-run when arriving with both ends in the URL.
   useEffect(() => {
@@ -274,6 +305,12 @@ export default function RoutePlanner() {
               checked={avoidUnknown}
               onChange={(e) => setAvoidUnknown(e.target.checked)}
             />
+            <Checkbox
+              label="Prefer reliable routes"
+              description="Also keeps away from streets with hotspots and open reports, which can add distance. Shows why."
+              checked={preferReliable}
+              onChange={(e) => setPreferReliable(e.target.checked)}
+            />
             <div>
               <Button type="submit" variant="primary" busy={busy} disabled={!from || !to}>
                 Find routes
@@ -281,6 +318,14 @@ export default function RoutePlanner() {
             </div>
           </form>
 
+          <div>
+            <Button type="button" variant="ghost" onClick={() => openAssistant({ kind: 'none' }, 'a walking route', 'plan_route')}>
+              Ask for a route
+            </Button>
+            <p className="mt-0.5 text-xs text-muted">
+              Describe the trip in your own words. The assistant plans it with this router and shows the result here.
+            </p>
+          </div>
           <div className="border-t border-hair pt-2">
             <p className="meta">Or try a trip with a known barrier</p>
             <ul className="mt-1 flex flex-wrap gap-1">
@@ -299,6 +344,9 @@ export default function RoutePlanner() {
           </div>
 
           {error && <ErrorNote error={error} />}
+          {error && from && to && noStepFreeRouteBarrier(error) && (
+            <RideHandoffCard pickup={from.label} dropoff={to.label} barrier={noStepFreeRouteBarrier(error) ?? ''} />
+          )}
           {busy && !result && (
             <div aria-hidden>
               <Skeleton className="h-[120px] w-full" />
@@ -316,6 +364,11 @@ export default function RoutePlanner() {
           )}
           {result && (
             <RouteResults result={result} selected={selected} setSelected={setSelected} />
+          )}
+          {result && ran && result.routes.length > 0 && (
+            <div className="border-t border-hair pt-2">
+              <SaveRoute from={ran.f} to={ran.t} profile={ran.p} />
+            </div>
           )}
         </div>
 
@@ -424,6 +477,7 @@ function RouteResults({ result, selected, setSelected }: { result: RouteResponse
           </label>
         ))}
       </fieldset>
+      <RiskBreakdown risk={result.routes[selected]?.risk} />
     </section>
   )
 }

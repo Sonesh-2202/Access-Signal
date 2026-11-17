@@ -41,7 +41,21 @@ Authenticated endpoints take `Authorization: Bearer <access_token>`. Errors retu
 | GET | `/api/issues/assignees`, `/api/issues/stats` | staff | Helpers |
 | GET | `/api/analytics/overview\|trends\|categories\|resolution\|heat\|coverage\|hotspots` | – | Public analytics |
 | POST | `/api/analytics/hotspots/recalculate` | staff | Re-cluster |
-| POST | `/api/chat` | user | Read-only assistant. Body `{messages[], context{kind, id? \| origin?, destination?, profile?}, language?}`. Returns `{answer, sources[], source, model, truncated}`. Writes nothing. Accepts `X-AI-Provider` / `X-AI-Key` |
+| POST | `/api/chat` | user | Read-only assistant. Body `{messages[], context{kind, id? \| origin?, destination?, profile?}, language?}`. Optional `intent`: `"answer"` (default) or `"plan_route"`. With `plan_route`, the latest message is read as a route request and the response also has `route` (`RoutePlanResult`: `status` planned, place_not_found or no_route; resolved `start`/`end`; the router's `route`; `notes`; `unsupported`; `message`). `plan_route` returns 503 "Route planning needs cloud AI" with no cloud tier, and 422 when the model's reply isn't a valid route request. Returns `{answer, sources[], source, model, truncated, route?}`. Writes nothing. Accepts `X-AI-Provider` / `X-AI-Key` |
+| GET | `/api/rides` | – | Curated accessible ride services: name, kind, phone, `tel` for tel: links, https link, source page. Public; no AI |
+| POST | `/api/rides/draft` | – (BYOK on AI) | Dispatcher message draft `{pickup, dropoff, barrier, passengers, use_ai}`. Returns `{text, source: ai \| template, preview: true, label, note}`. Writes nothing |
+| GET | `/api/places/{id}/preflight` | – | Good / Caution / Blocked with tagged reasons, sources and screen-reader text. Rules only |
+| POST | `/api/places/{id}/preflight/summary` | user (BYOK on AI) | Cited AI summary of the same records. `source` is `rules` when no cloud model answers |
+| POST | `/api/reports/translate` | user (BYOK on AI) | Translation draft `{text, target}` returns `{original, translation, target, source, model, label}`. Writes nothing |
+| GET | `/api/alerts/push` | – | `{enabled, public_key}`. Push is off unless VAPID keys are set |
+| POST | `/api/alerts/push-subscriptions` | user | Subscribe this browser `{endpoint (https), keys: {p256dh, auth}}` |
+| POST | `/api/alerts/push-subscriptions/unsubscribe` | user | Remove this browser's subscription `{endpoint}` |
+| GET / POST | `/api/alerts/corridors` | user | List saved routes, or save one (`name`, `origin`, `destination`, `profile`, alert kinds). Ten per account |
+| PATCH / DELETE | `/api/alerts/corridors/{id}` | user | Change alert kinds, or remove a saved route |
+| GET | `/api/alerts/inbox` | user | `{unread, items}`, newest 50. Each item has kind, title, body, corridor name and read state |
+| POST | `/api/alerts/inbox/{id}/read`, `/api/alerts/inbox/read-all` | user | Mark one or all items read |
+
+- `POST /api/routing/route` also takes `prefer_reliable` (default `false`). When it is set, the first route includes `risk`: `high_risk_avoided`, `avoided_streets`, `extra_m`, `summary`, `formula` and `on_route`.
 
 ## Examples
 

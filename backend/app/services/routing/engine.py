@@ -7,6 +7,7 @@ so a new report changes routes immediately without rebuilding the graph."""
 import math
 import threading
 from collections import defaultdict
+from datetime import UTC, datetime
 from dataclasses import dataclass
 
 import networkx as nx
@@ -15,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.taxonomy import subcategory_info
 from app.models import PathEdge, Report
+from app.services.intelligence.risk import FORMULA, HIGH_RISK, corridor_risk
 from app.services.routing.costs import (
     SPEED_M_PER_MIN,
+    apply_risk,
     Barrier,
     apply_barriers,
     base_cost,
@@ -171,30 +174,35 @@ def _turn(prev: float, nxt: float) -> str:
 
 
 class Router:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, now: datetime | None = None):
         self.db = db
         self.g = load_graph(db)
         self.barriers = active_barriers(db, self.g)
+        self.now = now or datetime.now(UTC)
+        self._risk_cache: dict[str, dict] | None = None
 
     # -------------------------------------------------------------- cost
 
-    def _edge_cost(self, eid: str, profile: str, avoid_unknown: bool, with_barriers: bool = True):
+    def _edge_cost(self, eid: str, profile: str, avoid_unknown: bool, with_barriers: bool = True,
+                   reliable: bool = False):
         e = self.g.edges[eid]
         ec = base_cost(e.length, e.attrs, profile)
         if with_barriers:
             ec = apply_barriers(ec, e.length, self.barriers.get(eid, []), profile)
+        if reliable:
+            ec = apply_risk(ec, e.length, self._risk_map().get(eid, {}).get("risk", 0.0))
         if ec.cost is not None:
             ec.cost = unknown_penalty(ec.cost, ec.unknown, avoid_unknown)
         return ec
 
     def _path(self, s: str, t: str, profile: str, avoid_unknown: bool, penalty: dict[str, float],
-              with_barriers: bool = True) -> list[str] | None:
+              with_barriers: bool = True, reliable: bool = False) -> list[str] | None:
         cache: dict[str, float | None] = {}
 
         def weight(u, v, d):
             eid = d["id"]
             if eid not in cache:
-                cache[eid] = self._edge_cost(eid, profile, avoid_unknown, with_barriers).cost
+                cache[eid] = self._edge_cost(eid, profile, avoid_unknown, with_barriers, reliable).cost
             c = cache[eid]
             return None if c is None else c * penalty.get(eid, 1.0)
 
@@ -210,7 +218,7 @@ class Router:
     # -------------------------------------------------------------- public
 
     def route(self, origin: tuple[float, float], destination: tuple[float, float], profile: str,
-              avoid_unknown: bool = False, alternatives: int = 2) -> dict:
+              avoid_unknown: bool = False, alternatives: int = 2, prefer_reliable: bool = False) -> dict:
         s, ds = self.g.nearest_node(*origin)
         t, dt = self.g.nearest_node(*destination)
         warnings = []
@@ -229,7 +237,7 @@ class Router:
         found: list[list[str]] = []
         penalty: dict[str, float] = {}
         for _ in range(alternatives + 1 + 2):  # a couple of extra tries to find distinct paths
-            nodes = self._path(s, t, profile, avoid_unknown, penalty)
+            nodes = self._path(s, t, profile, avoid_unknown, penalty, reliable=prefer_reliable)
             if nodes is None:
                 break
             eids = self._edge_ids(nodes)
@@ -249,14 +257,77 @@ class Router:
 
         routes = []
         for i, nodes in enumerate(found):
-            summary = self._summarise(nodes, profile, avoid_unknown)
+            summary = self._summarise(nodes, profile, avoid_unknown, reliable=prefer_reliable)
             label = "Recommended" if i == 0 else f"Alternative {i}"
             summary["label"] = label
             summary["explanation"] = self._explain(summary, baseline, profile, i)
+            if prefer_reliable and i == 0:
+                summary["risk"] = self._risk_report(nodes, baseline_nodes)
+                summary["explanation"].insert(0, summary["risk"]["summary"])
             routes.append(summary)
         return {"profile": profile, "routes": routes, "warnings": warnings}
 
+    def shortest_walk_m(self, origin: tuple[float, float], destination: tuple[float, float]) -> float | None:
+        """Length of the plain shortest walk, ignoring profiles and reports. Used as the
+        baseline for detour limits. Returns None when no path connects the two points."""
+        s, _ = self.g.nearest_node(*origin)
+        t, _ = self.g.nearest_node(*destination)
+        nodes = self._path(s, t, "standard", False, {}, with_barriers=False)
+        if nodes is None:
+            return None
+        return round(sum(self.g.edges[eid].length for eid in self._edge_ids(nodes)), 1)
+
     # -------------------------------------------------------------- helpers
+
+    def _risk_map(self) -> dict[str, dict]:
+        if self._risk_cache is None:
+            self._risk_cache = corridor_risk(self.db, self.g, self.barriers, self.now)
+        return self._risk_cache
+
+    def _risk_report(self, nodes: list[str], baseline_nodes: list[str] | None) -> dict:
+        """Which high-risk streets the shortest walk uses that this route doesn't, and what it costs in metres."""
+        risk_map = self._risk_map()
+
+        def risky(ns: list[str]) -> dict[str, dict]:
+            out: dict[str, dict] = {}
+            for eid in self._edge_ids(ns):
+                r = risk_map.get(eid)
+                if r and r["risk"] >= HIGH_RISK:
+                    out.setdefault(self.g.edges[eid].name, r)
+            return out
+
+        base = risky(baseline_nodes) if baseline_nodes else {}
+        on_route = risky(nodes)
+        avoided = sorted(set(base) - set(on_route))
+        route_m = sum(self.g.edges[eid].length for eid in self._edge_ids(nodes))
+        base_m = sum(self.g.edges[eid].length for eid in self._edge_ids(baseline_nodes)) if baseline_nodes else route_m
+        extra = route_m - base_m
+        n = len(avoided)
+        if n:
+            summary = (f"Avoids {n} high-risk corridor{'s' if n != 1 else ''} ({', '.join(avoided[:3])}), "
+                       f"{extra:+.0f} m compared with the shortest walk.")
+        else:
+            summary = (f"No high-risk corridor on the shortest walk is avoided. "
+                       f"This route is {extra:+.0f} m compared with it.")
+        return {
+            "enabled": True, "threshold": HIGH_RISK, "high_risk_avoided": n, "avoided_streets": avoided,
+            "extra_m": round(extra, 1), "summary": summary, "formula": FORMULA,
+            "on_route": [{"street": name, **r} for name, r in on_route.items()][:10],
+        }
+
+    def shortest_walk_coords(self, origin: tuple[float, float], destination: tuple[float, float]) -> list[list[float]] | None:
+        """The shortest walk's line as [lng, lat] points, ignoring profiles and reports."""
+        s, _ = self.g.nearest_node(*origin)
+        t, _ = self.g.nearest_node(*destination)
+        nodes = self._path(s, t, "standard", False, {}, with_barriers=False)
+        if nodes is None:
+            return None
+        coords: list[list[float]] = []
+        for a, b in zip(nodes, nodes[1:]):
+            e = self.g.edges[self.g.G[a][b]["id"]]
+            seg = e.coords if tuple(e.coords[0]) == self.g.nodes[a] else list(reversed(e.coords))
+            coords.extend(seg if not coords else seg[1:])
+        return coords
 
     def _edge_ids(self, nodes: list[str]) -> list[str]:
         return [self.g.G[a][b]["id"] for a, b in zip(nodes, nodes[1:])]
@@ -272,7 +343,7 @@ class Router:
             out.extend(self.barriers.get(eid, []))
         return out
 
-    def _summarise(self, nodes: list[str], profile: str, avoid_unknown: bool) -> dict:
+    def _summarise(self, nodes: list[str], profile: str, avoid_unknown: bool, reliable: bool = False) -> dict:
         segments: list[dict] = []
         coords_all: list[list[float]] = []
         total_len = total_cost = unknown_len = quality_len = 0.0
@@ -284,7 +355,7 @@ class Router:
             eid = self.g.G[a][b]["id"]
             e = self.g.edges[eid]
             coords = e.coords if tuple(e.coords[0]) == self.g.nodes[a] else list(reversed(e.coords))
-            ec = self._edge_cost(eid, profile, avoid_unknown)
+            ec = self._edge_cost(eid, profile, avoid_unknown, reliable=reliable)
             cost = ec.cost if ec.cost is not None else e.length * 10
             total_len += e.length
             total_cost += cost

@@ -1,4 +1,9 @@
 import { Container, PageHeader } from '@/components/layout/Layout'
+import { Inbox } from '@/components/alerts/Inbox'
+import { Field, Select } from '@/components/common/Field'
+import { LANGUAGES, preferredLanguage, setPreferredLanguage } from '@/utils/language'
+import { useState } from 'react'
+import { AlertSettings } from '@/components/alerts/AlertSettings'
 import { AIKeyPanel } from '@/components/settings/AIKeyPanel'
 import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { api } from '@/services/api'
@@ -90,6 +95,48 @@ export default function Settings() {
           </div>
         </section>
       </div>
+      <LanguagePanel />
+      <section id="alerts" aria-labelledby="alerts-page-h" className="border-t border-hair pt-6 mt-6">
+        <h2 id="alerts-page-h" className="text-2xl leading-snug">Route alerts</h2>
+        <p className="mt-1 max-w-[60ch] text-sm text-muted">
+          Save a route and AccessSignal tells you when a confirmed barrier or an out-of-service feature affects it. Alerts are opt-in, and each one says only what changed. Push alerts need your browser's permission. The inbox works without it.
+        </p>
+        <AlertSettings />
+        <Inbox />
+      </section>
     </Container>
+  )
+}
+
+/** The language for translations and assistant replies. Stored on this device only. */
+function LanguagePanel() {
+  const [lang, setLang] = useState<string>(preferredLanguage() ?? 'en')
+  return (
+    <section aria-labelledby="lang-h" className="mt-6 border-t border-hair pt-6">
+      <h2 id="lang-h" className="text-2xl leading-snug">
+        Language
+      </h2>
+      <p className="mt-1 max-w-[60ch] text-sm text-muted">
+        The default language for translating a report and for the assistant’s replies. It is saved on this device only.
+        Nothing is sent until you ask for a translation or an answer.
+      </p>
+      <div className="mt-2 max-w-[320px]">
+        <Field label="Preferred language">
+          <Select
+            value={lang}
+            onChange={(e) => {
+              setLang(e.target.value)
+              setPreferredLanguage(e.target.value)
+            }}
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.tag} value={l.tag}>
+                {l.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+    </section>
   )
 }

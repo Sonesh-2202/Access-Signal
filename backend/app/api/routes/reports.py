@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import ai_request, current_user, optional_user
+from app.api.dependencies import ai_request, chat_request, current_user, optional_user
 from app.api.serializers import report_detail, report_summary
 from app.core.database import get_db
 from app.domain.taxonomy import is_valid_category, subcategory_info
@@ -19,8 +19,12 @@ from app.schemas import (
     ReportCreate,
     ReportDetail,
     ReportPage,
+    TranslateIn,
+    TranslateOut,
 )
 from app.services import issues as issue_service
+from app.services.ai import translate as translate_service
+from app.services.ai.chat import ChatUnavailableError, normalise_language
 from app.services import places as place_service
 from app.services.ai.classifier import ImageInput, classify
 from app.services.ai.providers import Provider
@@ -87,6 +91,30 @@ def check_duplicates(body: DuplicateCheckIn, db: Session = Depends(get_db)):
             for c in found]
 
 
+@router.post("/translate", response_model=TranslateOut)
+def translate_draft(body: TranslateIn, _: User = Depends(current_user),
+                    byok: Provider | None = Depends(chat_request)) -> TranslateOut:
+    """Translate a report draft for the reporter to review. Read-only: nothing is filed or stored."""
+    target = normalise_language(body.target)
+    if target is None or not translate_service.valid_language(target):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choose a language such as en or es")
+    try:
+        result = translate_service.translate(body.text, target, byok)
+    except ChatUnavailableError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
+    return TranslateOut(original=body.text, translation=result["translation"], target=target,
+                        source=result["source"], model=result["model"], label=translate_service.LABEL)
+
+
+def _analysis(ai, translation) -> dict | None:
+    """What is stored beside the report: the AI classification and, when the reporter accepted one,
+    the original text of a translation together with the language it was in."""
+    data = ai.model_dump() if ai else {}
+    if translation is not None:
+        data["translation"] = {**translation.model_dump(), "reviewed_by_reporter": True}
+    return data or None
+
+
 @router.post("", response_model=ReportDetail, status_code=status.HTTP_201_CREATED)
 def create_report(body: ReportCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if not is_valid_category(body.category, body.subcategory):
@@ -117,7 +145,7 @@ def create_report(body: ReportCreate, user: User = Depends(current_user), db: Se
         user_id=user.id, place_id=place.id if place else None, lat=body.lat, lng=body.lng,
         address=body.address, category=body.category, subcategory=body.subcategory,
         description=body.description.strip(), severity_score=severity,
-        ai_analysis=ai.model_dump() if ai else None, user_confirmed=body.user_confirmed,
+        ai_analysis=_analysis(ai, body.translation), user_confirmed=body.user_confirmed,
         status="duplicate" if original else "open", duplicate_of=original.id if original else None,
     )
     db.add(report)

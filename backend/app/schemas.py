@@ -93,6 +93,28 @@ class EvidenceOut(ORM):
     created_at: datetime
 
 
+class TranslationRecord(BaseModel):
+    """A translation the reporter reviewed and chose to file. The original text is kept with the report."""
+    language: str = Field(min_length=2, max_length=20)  # BCP 47 tag of the original text
+    original: str = Field(min_length=1, max_length=4000)
+    source: str = Field(max_length=20)  # cloud tier that translated it
+    model: str | None = Field(default=None, max_length=120)
+    reviewed: Literal[True] = True
+
+
+class TranslateIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    target: str = Field(default="en", min_length=2, max_length=20)  # BCP 47 tag to translate into
+
+
+class TranslateOut(BaseModel):
+    original: str
+    translation: str
+    target: str
+    source: Literal["gemini", "groq", "nebius"]
+    model: str | None
+    label: str  # shown beside the translation: it is a draft for the reporter to review
+
 class ReportCreate(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
@@ -103,6 +125,7 @@ class ReportCreate(BaseModel):
     evidence_ids: list[str] = Field(default=[], max_length=6)
     place_id: str | None = None
     ai_analysis: Classification | None = None
+    translation: TranslationRecord | None = None  # set only when the reporter accepted a translation
     user_confirmed: bool = True
     duplicate_of: str | None = None
 
@@ -203,6 +226,7 @@ class RouteRequest(BaseModel):
     profile: Profile = "wheelchair"
     avoid_unknown: bool = False
     alternatives: int = Field(default=2, ge=0, le=3)
+    prefer_reliable: bool = False  # add corridor risk to the cost; see services/intelligence/risk.py
 
 
 class RouteSegment(BaseModel):
@@ -230,6 +254,7 @@ class RouteOption(BaseModel):
     explanation: list[str]
     geometry: dict[str, Any]
     segments: list[RouteSegment]
+    risk: dict[str, Any] | None = None  # set when prefer_reliable was requested
 
 
 class RouteResponse(BaseModel):
@@ -329,6 +354,42 @@ class ChatIn(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=50)
     context: ChatContext = Field(default_factory=ChatContext)
     language: str | None = Field(default=None, max_length=20)  # BCP 47 tag, e.g. "es" or "zh-Hant"
+    # "plan_route" reads the last user message as a route request (see services/ai/chat.py).
+    intent: Literal["answer", "plan_route"] = "answer"
+
+
+AvoidFeature = Literal["reported_barriers", "construction", "unknown_data", "stairs", "steep_slopes", "rough_surfaces"]
+
+
+class RouteIntent(BaseModel):
+    """A route request as the model extracted it. Place names only: the model never
+    returns coordinates or a path. The server resolves names to places and runs the router."""
+    model_config = ConfigDict(extra="forbid")
+
+    profile: Profile = "wheelchair"
+    start: str = Field(min_length=2, max_length=120)
+    end: str = Field(min_length=2, max_length=120)
+    avoid_features: list[AvoidFeature] = Field(default_factory=list, max_length=6)
+    max_detour_pct: int | None = Field(default=None, ge=0, le=100)
+    max_incline: float | None = Field(default=None, ge=0, le=0.2)  # 0.05 means 5 %
+
+
+class RoutePlace(BaseModel):
+    id: str
+    name: str
+    lat: float
+    lng: float
+
+
+class RoutePlanResult(BaseModel):
+    status: Literal["planned", "place_not_found", "no_route"]
+    intent: RouteIntent
+    start: RoutePlace | None = None
+    end: RoutePlace | None = None
+    route: RouteOption | None = None  # the router's output, unchanged
+    notes: list[str] = Field(default_factory=list)  # outcome of each limit the user set, and routing warnings
+    unsupported: list[str] = Field(default_factory=list)  # avoid_features this profile can't enforce
+    message: str  # plain text for places and routes that could not be planned
 
 
 class Citation(BaseModel):
@@ -345,3 +406,139 @@ class ChatOut(BaseModel):
     model: str | None
     # True when history or context was cut to fit the limits.
     truncated: bool
+    # Set only for intent="plan_route". The route comes from the router, not from the model.
+    route: RoutePlanResult | None = None
+
+# ---------------------------------------------------------------- accessible rides (AI-3)
+class RideOption(BaseModel):
+    """One curated ride service. Only tel: and https links are ever rendered."""
+    id: str = Field(max_length=40)
+    name: str = Field(max_length=120)
+    kind: Literal["taxi", "paratransit"]
+    phone: str | None = Field(default=None, pattern=r"^\d{3}-\d{3}-\d{4}$")
+    tel: str | None = None  # derived from phone, e.g. +18773372017
+    url: str | None = Field(default=None, max_length=300)
+    notes: str = Field(max_length=400)
+    source_url: str = Field(max_length=300)  # where the phone number was checked
+
+
+class RideDraftIn(BaseModel):
+    pickup: str = Field(min_length=2, max_length=120)
+    dropoff: str = Field(min_length=2, max_length=120)
+    barrier: str = Field(min_length=2, max_length=200)  # the specific barrier, e.g. "missing curb cut"
+    passengers: int = Field(default=1, ge=1, le=4)
+    use_ai: bool = False  # False: the fixed template. True: a cloud model, checked against the template facts
+
+
+class DispatcherDraft(BaseModel):
+    """A message the person reviews before sending. Never sent by the app."""
+    text: str
+    source: Literal["ai", "template"]
+    model: str | None = None
+    preview: Literal[True] = True
+    label: str
+    note: str | None = None  # why the template was used when AI was asked for
+
+
+class RideHandoff(BaseModel):
+    options: list[RideOption]
+    draft: DispatcherDraft
+
+
+# ---------------------------------------------------------------- route alerts (AI-4)
+class CorridorIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    origin: tuple[float, float]  # (lat, lng)
+    destination: tuple[float, float]
+    profile: Profile = "wheelchair"
+    notify_reports: bool = True
+    notify_outages: bool = True
+    notify_route_changes: bool = True
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def in_range(cls, v: tuple[float, float]) -> tuple[float, float]:
+        if not (-90 <= v[0] <= 90 and -180 <= v[1] <= 180):
+            raise ValueError("Coordinates are out of range")
+        return v
+
+
+class CorridorPatch(BaseModel):
+    notify_reports: bool | None = None
+    notify_outages: bool | None = None
+    notify_route_changes: bool | None = None
+
+
+class CorridorOut(ORM):
+    id: str
+    name: str
+    origin: tuple[float, float]
+    destination: tuple[float, float]
+    profile: Profile
+    notify_reports: bool
+    notify_outages: bool
+    notify_route_changes: bool
+    last_checked_at: datetime | None
+    created_at: datetime
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=200)
+    auth: str = Field(min_length=4, max_length=64)
+
+
+class PushSubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=500)
+    keys: PushKeys
+
+    @field_validator("endpoint")
+    @classmethod
+    def https_only(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("Push endpoints must use https")
+        return v
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=500)
+
+
+class PushStatus(BaseModel):
+    enabled: bool  # the server has VAPID keys, so push can be sent
+    public_key: str | None = None
+
+
+class InboxItem(BaseModel):
+    id: str
+    kind: str
+    title: str
+    body: str
+    corridor_id: str | None
+    corridor_name: str | None
+    created_at: datetime
+    read: bool
+
+
+class InboxOut(BaseModel):
+    unread: int
+    items: list[InboxItem]
+
+
+# ---------------------------------------------------------------- preflight brief (AI-5)
+class PreflightOut(BaseModel):
+    place_id: str
+    place_name: str
+    status: Literal["good", "caution", "blocked"]
+    status_label: str
+    reasons: list[str]  # each starts with its tag, e.g. "[R1] ...", when one exists
+    summary: str  # rule-based here; the AI summary comes from the POST endpoint
+    source: Literal["rules"]
+    sources: list[Citation]
+    screen_reader: str
+
+
+class PreflightSummaryOut(BaseModel):
+    summary: str
+    source: Literal["gemini", "groq", "nebius", "rules"]  # "rules" when no cloud model answered
+    model: str | None
+    sources: list[Citation]

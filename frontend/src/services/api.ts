@@ -5,6 +5,17 @@ import * as local from './mockApi'
 import type {
   ChatReply,
   ChatRequest,
+  AlertCorridor,
+  AlertCorridorInput,
+  PreflightBrief,
+  PreflightSummary,
+  TranslateReply,
+  AlertPreferences,
+  AlertPushStatus,
+  DispatcherDraft,
+  Inbox,
+  RideDraftRequest,
+  RideOption,
   Classification,
   DuplicateCandidate,
   Evidence,
@@ -220,7 +231,13 @@ export async function refreshSession(): Promise<boolean> {
 }
 
 /** Only these endpoints can call a model, so only they ever see a personal AI key. */
-const AI_PATHS = [/^\/api\/reports\/classify$/, /^\/api\/chat$/]
+const AI_PATHS = [
+  /^\/api\/reports\/classify$/,
+  /^\/api\/chat$/,
+  /^\/api\/rides\/draft$/,
+  /^\/api\/reports\/translate$/,
+  /^\/api\/places\/[^/]+\/preflight\/summary$/,
+]
 
 type RequestOpts = { body?: unknown; query?: Query; form?: FormData; signal?: AbortSignal }
 
@@ -313,9 +330,9 @@ export const api = {
   place: (id: string) => withFallback(() => request<PlaceDetail>('GET', `/api/places/${id}`), () => local.place(id), 'place'),
 
   // routing
-  route: (origin: [number, number], destination: [number, number], profile: Profile, avoid_unknown: boolean) =>
+  route: (origin: [number, number], destination: [number, number], profile: Profile, avoid_unknown: boolean, prefer_reliable = false) =>
     withFallback(
-      () => request<RouteResponse>('POST', '/api/routing/route', { body: { origin, destination, profile, avoid_unknown, alternatives: 2 } }),
+      () => request<RouteResponse>('POST', '/api/routing/route', { body: { origin, destination, profile, avoid_unknown, alternatives: 2, prefer_reliable } }),
       () => local.route(origin, destination, profile, avoid_unknown),
       'routing',
     ),
@@ -358,6 +375,28 @@ export const api = {
   hotspots: () => withFallback(() => request<Hotspot[]>('GET', '/api/analytics/hotspots'), local.hotspots, 'analytics'),
   recalcHotspots: () => request<Hotspot[]>('POST', '/api/analytics/hotspots/recalculate'),
 
+  // accessible rides (AI-3). The list is public and works offline (empty in the demo). A draft is a preview; nothing is sent.
+  rides: () => withFallback(() => request<RideOption[]>('GET', '/api/rides'), () => [] as RideOption[], 'rides'),
+  rideDraft: (body: RideDraftRequest) => request<DispatcherDraft>('POST', '/api/rides/draft', { body }),
+  // Preflight brief (AI-5). The status is rules-based and public; the summary is signed in and cited.
+  preflight: (placeId: string) => request<PreflightBrief>('GET', `/api/places/${placeId}/preflight`),
+  preflightSummary: (placeId: string) => request<PreflightSummary>('POST', `/api/places/${placeId}/preflight/summary`),
+  // Multilingual reporting (AI-6). A preview to review. Nothing is filed by this call.
+  translate: (body: { text: string; target: string }) => request<TranslateReply>('POST', '/api/reports/translate', { body }),
+  // route alerts (AI-4). Opt-in and signed in. Nothing is sent without a saved route and a push subscription.
+  alertPush: () => request<AlertPushStatus>('GET', '/api/alerts/push'),
+  alertSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    request<{ subscribed: boolean }>('POST', '/api/alerts/push-subscriptions', { body: sub }),
+  alertUnsubscribe: (endpoint: string) =>
+    request<void>('POST', '/api/alerts/push-subscriptions/unsubscribe', { body: { endpoint } }),
+  corridors: () => request<AlertCorridor[]>('GET', '/api/alerts/corridors'),
+  saveCorridor: (body: AlertCorridorInput) => request<AlertCorridor>('POST', '/api/alerts/corridors', { body }),
+  updateCorridor: (id: string, body: AlertPreferences) =>
+    request<AlertCorridor>('PATCH', `/api/alerts/corridors/${id}`, { body }),
+  deleteCorridor: (id: string) => request<void>('DELETE', `/api/alerts/corridors/${id}`),
+  inbox: () => request<Inbox>('GET', '/api/alerts/inbox'),
+  markRead: (id: string) => request<void>('POST', `/api/alerts/inbox/${id}/read`),
+  markAllRead: () => request<void>('POST', '/api/alerts/inbox/read-all'),
   // assistant (read-only). No local fallback: the demo dataset can't hold a conversation.
   chat: async (body: ChatRequest): Promise<ChatReply> => {
     try {

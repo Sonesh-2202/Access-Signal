@@ -1,6 +1,9 @@
 from app.models.entities import (
     Evidence,
     Hotspot,
+    Notification,
+    PushSubscription,
+    SavedCorridor,
     Issue,
     IssueHistory,
     PathEdge,
@@ -13,6 +16,9 @@ from app.models.entities import (
 
 __all__ = [
     "Evidence",
+    "Notification",
+    "PushSubscription",
+    "SavedCorridor",
     "Hotspot",
     "Issue",
     "IssueHistory",

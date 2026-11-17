@@ -15,6 +15,7 @@ from app.domain.taxonomy import ISSUE_PRIORITIES, subcategory_info
 from app.models import Evidence, Issue, IssueHistory, Report, User
 from app.schemas import IssueDetail, IssuePage, IssueUpdate
 from app.services import issues as issue_service
+from app.services.alerts.reverify import notify_reverification
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 
@@ -174,6 +175,8 @@ def update_issue(issue_id: str, body: IssueUpdate, user: User = Depends(manager_
         i.history.append(IssueHistory(changed_by=user.id, old_status=i.status, new_status=i.status, notes=body.notes))
     if body.resolution_notes and not body.status:
         i.resolution_notes = body.resolution_notes
+    if body.status == "resolved":
+        notify_reverification(db, i.report)  # nudges only; nothing changes until a reporter confirms
     i.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(i)

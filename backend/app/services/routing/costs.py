@@ -134,6 +134,16 @@ def apply_barriers(ec: EdgeCost, length: float, barriers: list[Barrier], profile
     return EdgeCost(cost, why, ec.unknown)
 
 
+RISK_WEIGHT = 1.5  # extra effective metres per metre of edge at risk 1.0
+
+
+def apply_risk(ec: EdgeCost, length: float, risk: float) -> EdgeCost:
+    """Corridor risk from intelligence/risk.py. Only ever adds cost, so cost stays >= length."""
+    if ec.cost is None or risk <= 0:
+        return ec
+    return EdgeCost(ec.cost + length * RISK_WEIGHT * min(1.0, risk), ec.factors + [f"corridor risk {risk:.2f}"],
+                    ec.unknown)
+
 def unknown_penalty(cost: float, unknown: list[str], avoid_unknown: bool) -> float:
     if not unknown:
         return cost

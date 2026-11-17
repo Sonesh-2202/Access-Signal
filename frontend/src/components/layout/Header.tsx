@@ -23,6 +23,14 @@ export function Header() {
   const [menu, setMenu] = useState(false)
   const loc = useLocation()
   const nav = useNavigate()
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    if (!user) return setUnread(0)
+    api
+      .inbox()
+      .then((b) => setUnread(b.unread))
+      .catch(() => setUnread(0))
+  }, [user])
 
   useEffect(() => setMenu(false), [loc.pathname])
 
@@ -74,6 +82,9 @@ export function Header() {
           </ButtonLink>
           {user ? (
             <div className="hidden items-center gap-1 lg:flex">
+              <Link to="/settings#alerts" className="min-h-touch px-1 text-sm text-ink underline decoration-rule underline-offset-[3px] hover:decoration-ink">
+                Alerts{unread > 0 ? ` (${unread} new)` : ''}
+              </Link>
               <span className="max-w-[160px] truncate text-sm text-muted" title={user.email}>
                 {user.display_name}
               </span>

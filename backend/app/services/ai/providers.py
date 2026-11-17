@@ -192,6 +192,27 @@ class OpenAICompatibleProvider:
             raise ProviderError(f"{self.label} returned an empty answer")
         return text
 
+    def chat_json(self, messages: list[dict], *, schema: dict, max_tokens: int, temperature: float) -> str:
+        """Ask for a JSON reply that follows `schema`. If the model rejects response_format
+        with a 400, retry once without it. The caller validates the JSON, never this method."""
+        body = {"model": self.model, "temperature": temperature, "max_tokens": max_tokens,
+                "messages": messages, **self.extra_body}
+        try:
+            try:
+                choice = self._post({**body, "response_format": {"type": "json_schema", "json_schema": schema}})
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 400:
+                    raise
+                choice = self._post(body)
+            text = strip_reasoning(choice["message"].get("content") or "").strip()
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(f"{self.label} returned HTTP {e.response.status_code}") from None
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            raise ProviderError(f"{self.label} sent an unreadable reply ({type(e).__name__})") from None
+        if not text:
+            raise ProviderError(f"{self.label} returned an empty answer")
+        return text
+
     def _attempt(self, content: list[dict] | str, use_schema: bool, used_images: bool) -> Classification:
         raw = self._chat(content, use_schema)
         return parse_classification(raw, source=self.name, model=self.model, used_images=used_images)

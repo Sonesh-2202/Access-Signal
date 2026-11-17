@@ -1,14 +1,23 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/common/Button'
 import { Dialog } from '@/components/common/Dialog'
 import { Textarea } from '@/components/common/Field'
 import { api } from '@/services/api'
 import { useAuth } from '@/stores/auth'
 import { addTurn, type AssistantTurn, clearConversation, closeAssistant, useAssistant } from '@/stores/assistant'
-import type { ChatCitation } from '@/types'
-import { aiSourceShort, chatPrivacyNote } from '@/utils/aiSource'
+import { sendRoutePlanToMap } from '@/stores/routePlan'
+import type { ChatCitation, RoutePlanResult } from '@/types'
+import { aiSourceShort, chatPrivacyNote, routeSourceNote } from '@/utils/aiSource'
 import { announce } from '@/utils/announce'
+import { preferredLanguage } from '@/utils/language'
+import { distance, minutes, PROFILE_LABEL } from '@/utils/format'
+
+/** Example requests for the route planner. Place names must exist on the places list. */
+const ROUTE_EXAMPLES = [
+  'Step-free route from Union Square to Grand Central Terminal, no more than 10% longer.',
+  'Route from NYU Langone to Herald Square that avoids construction.',
+]
 
 const EXAMPLES: Record<'none' | 'report' | 'place' | 'route', string[]> = {
   report: ['What is blocking access here?', 'Who does this barrier affect most?'],
@@ -25,6 +34,7 @@ export function AssistantPanel() {
   const open = useAssistant((s) => s.open)
   const context = useAssistant((s) => s.context)
   const label = useAssistant((s) => s.contextLabel)
+  const intent = useAssistant((s) => s.intent)
   const turns = useAssistant((s) => s.turns)
   const user = useAuth((s) => s.user)
   const [draft, setDraft] = useState('')
@@ -46,14 +56,21 @@ export function AssistantPanel() {
     setDraft('')
     setPending(true)
     try {
-      const lang = navigator.language
+      const lang = preferredLanguage() ?? navigator.language
       const reply = await api.chat({
         // Failed turns stay on screen but are not sent back as history.
         messages: history.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
         context,
         language: lang && !/^en\b/i.test(lang) ? lang : undefined,
+        intent,
       })
-      addTurn({ role: 'assistant', content: reply.answer, sources: reply.sources, source: reply.source })
+      addTurn({
+        role: 'assistant',
+        content: reply.answer,
+        sources: reply.sources,
+        source: reply.source,
+        route: reply.route ?? undefined,
+      })
       announce('Answer ready')
     } catch (err) {
       addTurn({ role: 'assistant', content: (err as Error).message || 'The assistant couldn’t answer.', error: true })
@@ -70,7 +87,8 @@ export function AssistantPanel() {
     }
   }
 
-  const heading = context.kind === 'none' ? 'Ask AccessSignal' : `Ask about ${label || 'this page'}`
+  const heading =
+    intent === 'plan_route' ? 'Ask for a route' : context.kind === 'none' ? 'Ask AccessSignal' : `Ask about ${label || 'this page'}`
 
   return (
     <Dialog open={open} onClose={closeAssistant} title={heading} variant="sheet" className="sm:max-w-[600px]">
@@ -98,7 +116,7 @@ export function AssistantPanel() {
             <div className="text-sm text-muted">
               <p>Try asking:</p>
               <ul className="mt-0.5 flex flex-col gap-0.5">
-                {EXAMPLES[context.kind].map((q) => (
+                {(intent === 'plan_route' ? ROUTE_EXAMPLES : EXAMPLES[context.kind]).map((q) => (
                   <li key={q}>
                     <button
                       type="button"
@@ -173,8 +191,58 @@ function TurnView({ turn }: { turn: AssistantTurn }) {
         {tier}
       </p>
       <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed">{turn.content}</p>
+      {turn.route && <RouteCard plan={turn.route} />}
       {turn.sources && turn.sources.length > 0 && <Sources sources={turn.sources} />}
     </div>
+  )
+}
+
+/**
+ * A planned route as text. The same numbers appear on the route planner map after "Apply to
+ * map". Nothing is saved, and the person decides whether to use the route.
+ */
+function RouteCard({ plan }: { plan: RoutePlanResult }) {
+  const headingId = useId()
+  const navigate = useNavigate()
+  const { start, end, route } = plan
+  if (plan.status !== 'planned' || !start || !end || !route) return null
+  function applyToMap() {
+    sendRoutePlanToMap(plan)
+    closeAssistant()
+    navigate('/route')
+  }
+  return (
+    <section aria-labelledby={headingId} className="mt-1 border border-hair p-1.5">
+      <h3 id={headingId} className="meta">
+        Planned route
+      </h3>
+      <p className="mt-0.5 text-sm">
+        From {start.name} to {end.name}, {PROFILE_LABEL[plan.intent.profile]} profile.
+      </p>
+      <p className="text-sm">
+        {distance(route.distance_m)}, about {minutes(route.duration_min)} walking. Accessibility score{' '}
+        {route.accessibility_score.toFixed(2)} (1.00 is best). Reported barriers on the route: {route.barriers_on_route}.
+        Barriers avoided compared with the shortest walk: {route.barriers_avoided}.
+      </p>
+      {plan.notes.length > 0 && (
+        <ul className="mt-0.5 list-disc pl-4 text-sm">
+          {plan.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+      {plan.unsupported.length > 0 && (
+        <p className="mt-0.5 text-sm">
+          Not enforced for this profile: {plan.unsupported.map((f) => f.replace(/_/g, ' ')).join(', ')}.
+        </p>
+      )}
+      <p className="mt-0.5 text-xs text-muted">{routeSourceNote}</p>
+      <div className="mt-1">
+        <Button type="button" variant="primary" size="sm" onClick={applyToMap}>
+          Apply to map
+        </Button>
+      </div>
+    </section>
   )
 }
 

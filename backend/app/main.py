@@ -7,7 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import analytics, auth, chat, evidence, issues, meta, places, reports, routing
+from app.api.routes import alerts, analytics, auth, chat, evidence, issues, meta, places, reports, rides, routing
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.services.ai.classifier import log_startup_status
@@ -48,13 +48,14 @@ app = FastAPI(
         {"name": "issues", "description": "Infrastructure manager workflow (staff only)"},
         {"name": "analytics", "description": "Trends, hotspots and coverage"},
         {"name": "chat", "description": "Read-only AI assistant over public reports, places and routes"},
+        {"name": "alerts", "description": "Saved routes, Web Push subscriptions and the in-app inbox (opt-in)"},
         {"name": "meta", "description": "Health, taxonomy and AI status"},
     ],
 )
 
 # Endpoints that call a model take small JSON bodies only. The chat cap is larger because
 # a conversation carries its history with it.
-_AI_PATHS = ("/api/reports/classify",)
+_AI_PATHS = ("/api/reports/classify", "/api/reports/translate", "/api/rides/draft")
 
 
 @app.middleware("http")
@@ -98,5 +99,5 @@ app.add_middleware(
 )
 
 
-for r in (auth, meta, evidence, reports, places, routing, issues, analytics, chat):
+for r in (auth, meta, evidence, reports, places, routing, issues, analytics, chat, rides, alerts):
     app.include_router(r.router)

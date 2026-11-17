@@ -63,7 +63,14 @@ Each report carries a confidence score built from evidence, independent corrobor
 <td width="50%" valign="top">
 
 ### Cloud AI, with a read-only assistant
-Photos and text are classified by a cloud model: Gemini or Groq on the server's free-tier keys, or your own key from Settings. A read-only assistant answers questions about the report, place or route on screen, and cites the records it used. It can't file, change or verify anything. When no cloud model answers, keyword rules take over, and every result says which one produced it.
+Photos and text are classified by a cloud model: Gemini or Groq on the server's free-tier keys, or your own key from Settings. A read-only assistant answers questions about the report, place or route on screen, and cites the records it used. It can't file, change or verify anything. The same panel can plan a walking route from a request such as "step-free from Union Square to Grand Central": the model reads the request, the place names are resolved from the places list, and the existing router draws the route. Without a cloud key the planner says it needs AI, and the route planner page still works without it. When no cloud model answers, keyword rules take over, and every result says which one produced it.
+
+Four more features work on top of the same rules. Each one is optional, and each one says what it used.
+- **Accessible ride when no step-free route exists.** A short list of local wheelchair-accessible services (phone numbers checked against their official pages), and a dispatcher message to read or copy. The message is a draft for the person to review. The app never books a ride or sends the message.
+- **Reliable routes.** An opt-in option that keeps the route away from streets with hotspots and open reports. It says which corridors it avoided and what the detour costs. The formula is on the methodology page.
+- **Route alerts.** Save a route and choose what to hear about. Alerts appear in the inbox, and push works when the browser allows it. Alerts are off until someone saves a route and turns them on.
+- **Preflight and translation.** A Good, Caution or Blocked status for each place, with the record behind each reason. A report can be drafted in another language and reviewed before filing, and the original text is kept.
+
 
 </td>
 </tr>
@@ -145,7 +152,7 @@ flowchart LR
     Routes --> Intel
     Routes --> AI
     AI -- "OpenAI-compatible,<br/>server key or BYOK" --> CloudAI
-    ChatAPI -- "plain text, no schema" --> CloudAI
+    ChatAPI -- "plain text; route requests use a schema" --> CloudAI
     AI --> KW
     Routes --> DB
     ChatAPI -- "read only" --> DB
@@ -242,8 +249,8 @@ Then open http://localhost:3000. The Postgres path (Alembic migrations and seedi
 
 | Suite | Count | Command | Covers |
 |---|---:|---|---|
-| Backend | 100 | `pytest` | API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), cloud providers and keyword fallback against a fake OpenAI server, BYOK, the read-only chat (grounding, no writes, limits, key redaction), CORS, deploy config |
-| Frontend unit | 47 | `npm test` | Form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling, the assistant panel (focus, Escape, sources, read-only notice) |
+| Backend | 198 | `pytest` | Route planning from a request (schema-checked intent, place resolution, no writes, offline message), API flows, issue state machine, evidence privacy on disk and Supabase, property-based routing costs (Hypothesis), cloud providers and keyword fallback against a fake OpenAI server, BYOK, the read-only chat (grounding, no writes, limits, key redaction), CORS, deploy config |
+| Frontend unit | 85 | `npm test` | Route planning in the assistant (intent, planned-route card, Apply to map, axe), form controls, status marks, password rules, legal pages, route guards, axe checks, demo dataset, cold-start banner and retry, BYOK key handling, the assistant panel (focus, Escape, sources, read-only notice) |
 | End-to-end | 31 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 9 pages, overflow at desktop, mobile and 390 px. Point `E2E_BASE_URL` at the live site to run it there |
 
 The E2E suite files a real report and edits an issue, so reseed afterwards.

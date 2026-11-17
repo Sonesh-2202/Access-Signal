@@ -114,10 +114,14 @@ export interface ChatCitation {
   url: string
 }
 
+/** "plan_route" reads the latest message as a route request. Answers come back with a route. */
+export type ChatIntent = 'answer' | 'plan_route'
+
 export interface ChatRequest {
   messages: ChatMessage[]
   context: ChatContext
   language?: string
+  intent?: ChatIntent
 }
 
 export interface ChatReply {
@@ -127,6 +131,41 @@ export interface ChatReply {
   model: string | null
   /** True when history or context was cut to fit the limits. */
   truncated: boolean
+  /** Set for intent "plan_route". The route is the router's output, not the model's. */
+  route?: RoutePlanResult | null
+}
+
+export type AvoidFeature = 'reported_barriers' | 'construction' | 'unknown_data' | 'stairs' | 'steep_slopes' | 'rough_surfaces'
+
+/** A route request as the model extracted it. Place names only, never coordinates. */
+export interface RouteIntent {
+  profile: Profile
+  start: string
+  end: string
+  avoid_features: AvoidFeature[]
+  max_detour_pct: number | null
+  /** A fraction: 0.05 means 5 %. */
+  max_incline: number | null
+}
+
+export interface RoutePlace {
+  id: string
+  name: string
+  lat: number
+  lng: number
+}
+
+export interface RoutePlanResult {
+  status: 'planned' | 'place_not_found' | 'no_route'
+  intent: RouteIntent
+  start: RoutePlace | null
+  end: RoutePlace | null
+  route: RouteOption | null
+  /** Outcome of each limit the user set, plus routing warnings. */
+  notes: string[]
+  /** Avoid features this profile does not enforce. */
+  unsupported: string[]
+  message: string
 }
 
 export interface Evidence {
@@ -248,6 +287,24 @@ export interface RouteSegment {
   coords: [number, number][]
 }
 
+export interface RouteRiskEdge {
+  street: string
+  risk: number
+  breakdown: { hotspots: number; open_issues: number; mean_confidence: number; time_multiplier: number; risk: number }
+}
+
+/** Set when the route was planned with prefer_reliable. Scores come from services/intelligence/risk.py. */
+export interface RouteRisk {
+  enabled: boolean
+  threshold: number
+  high_risk_avoided: number
+  avoided_streets: string[]
+  extra_m: number
+  summary: string
+  formula: string
+  on_route: RouteRiskEdge[]
+}
+
 export interface RouteOption {
   label: string
   distance_m: number
@@ -260,6 +317,7 @@ export interface RouteOption {
   explanation: string[]
   geometry: GeoJSON.LineString
   segments: RouteSegment[]
+  risk?: RouteRisk | null
 }
 
 export interface RouteResponse {
@@ -338,4 +396,137 @@ export interface GeocodeResult {
   label: string
   lat: number
   lng: number
+}
+
+/* ------------------------------------------------------------------ accessible rides (AI-3) */
+
+export interface RideOption {
+  id: string
+  name: string
+  kind: 'taxi' | 'paratransit'
+  /** Formatted for people, e.g. 877-337-2017. */
+  phone: string | null
+  /** For tel: links, e.g. +18773372017. */
+  tel: string | null
+  url: string | null
+  notes: string
+  source_url: string
+}
+
+export interface RideDraftRequest {
+  pickup: string
+  dropoff: string
+  barrier: string
+  passengers?: number
+  use_ai?: boolean
+}
+
+export interface DispatcherDraft {
+  text: string
+  source: 'ai' | 'template'
+  model: string | null
+  preview: true
+  label: string
+  note: string | null
+}
+
+/* ------------------------------------------------------------------ route alerts (AI-4) */
+
+export interface AlertCorridor {
+  id: string
+  name: string
+  origin: [number, number]
+  destination: [number, number]
+  profile: Profile
+  notify_reports: boolean
+  notify_outages: boolean
+  notify_route_changes: boolean
+  last_checked_at: string | null
+  created_at: string
+}
+
+export interface AlertCorridorInput {
+  name: string
+  origin: [number, number]
+  destination: [number, number]
+  profile?: Profile
+  notify_reports?: boolean
+  notify_outages?: boolean
+  notify_route_changes?: boolean
+}
+
+export interface AlertPreferences {
+  notify_reports?: boolean
+  notify_outages?: boolean
+  notify_route_changes?: boolean
+}
+
+export interface AlertPushStatus {
+  /** The server has VAPID keys, so it can send push. */
+  enabled: boolean
+  public_key: string | null
+}
+
+export type AlertKind = 'report' | 'outage' | 'route_change' | 'reverify'
+
+export interface InboxItem {
+  id: string
+  kind: AlertKind
+  title: string
+  body: string
+  corridor_id: string | null
+  corridor_name: string | null
+  created_at: string
+  read: boolean
+}
+
+export interface Inbox {
+  unread: number
+  items: InboxItem[]
+}
+
+/* ------------------------------------------------------------------ preflight brief (AI-5) */
+
+export type PreflightStatus = 'good' | 'caution' | 'blocked'
+
+/** Rules-based status for a place. Reasons carry their citation tags, e.g. "[R1] Open report: ...". */
+export interface PreflightBrief {
+  place_id: string
+  place_name: string
+  status: PreflightStatus
+  status_label: string
+  reasons: string[]
+  summary: string
+  source: 'rules'
+  sources: ChatCitation[]
+  screen_reader: string
+}
+
+export interface PreflightSummary {
+  summary: string
+  /** "rules" when no cloud model answered. */
+  source: CloudProvider | 'rules'
+  model: string | null
+  sources: ChatCitation[]
+}
+
+/* ------------------------------------------------------------------ multilingual reporting (AI-6) */
+
+export interface TranslateReply {
+  original: string
+  translation: string
+  target: string
+  source: CloudProvider
+  model: string | null
+  /** Shown beside the translation: a draft to review before filing. */
+  label: string
+}
+
+/** A translation the reporter reviewed and chose to file. The original text is kept with the report. */
+export interface TranslationRecord {
+  language: string
+  original: string
+  source: string
+  model: string | null
+  reviewed: true
 }

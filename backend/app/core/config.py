@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     chat_temperature: float = Field(default=0.2, ge=0, le=1)
     chat_max_body_bytes: int = 65_536
 
+    # Web Push for route alerts. Self-hosted VAPID keys: no paid notification service. Generate with
+    # scripts/generate_vapid.py. Without them, alerts still reach the in-app inbox, only the push is skipped.
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str = "mailto:alerts@localhost"
+
     # Files. STORAGE_BACKEND=supabase stores evidence in a private Supabase bucket.
     storage_backend: Literal["local", "supabase"] = "local"
     upload_dir: Path = BACKEND_DIR / "uploads"

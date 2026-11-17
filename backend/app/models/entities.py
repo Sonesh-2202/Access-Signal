@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -198,3 +198,57 @@ class Hotspot(Base):
     trend: Mapped[str] = mapped_column(String(16), default="stable")  # rising | stable | falling
     report_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SavedCorridor(Base):
+    """A route the user asked to watch. Opt-in: nothing is watched until the user saves it."""
+
+    __tablename__ = "saved_corridors"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    origin_lat: Mapped[float] = mapped_column(Float)
+    origin_lng: Mapped[float] = mapped_column(Float)
+    destination_lat: Mapped[float] = mapped_column(Float)
+    destination_lng: Mapped[float] = mapped_column(Float)
+    profile: Mapped[str] = mapped_column(String(24), default="wheelchair")
+    notify_reports: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_outages: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_route_changes: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Hash of the barriers and length last seen on this route. A change means the route changed.
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PushSubscription(Base):
+    """A browser's Web Push endpoint. Keys are needed to encrypt each message."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(String(500), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Notification(Base):
+    """The in-app inbox. Every push is also stored here, so nothing depends on one channel."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (UniqueConstraint("user_id", "dedupe_key", name="uq_notifications_user_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    corridor_id: Mapped[str | None] = mapped_column(ForeignKey("saved_corridors.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(32))  # report | outage | route_change | reverify
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(String(300))
+    dedupe_key: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

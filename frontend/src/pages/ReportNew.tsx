@@ -16,7 +16,8 @@ import { useAsync, useDocumentTitle } from '@/hooks/useAsync'
 import { subLabel, useTaxonomy } from '@/hooks/useTaxonomy'
 import { api, reverseGeocode } from '@/services/api'
 import { maskedKey, useAIKey } from '@/stores/aiKey'
-import type { Classification, DuplicateCandidate, Evidence } from '@/types'
+import type { Classification, DuplicateCandidate, Evidence, TranslationRecord } from '@/types'
+import { TranslatePanel } from '@/components/reports/TranslatePanel'
 import { aiPrivacyNote, aiSourceLabel, isModelSource } from '@/utils/aiSource'
 import { announce } from '@/utils/announce'
 import { cx } from '@/utils/cx'
@@ -53,6 +54,8 @@ export default function ReportNew() {
   const [photos, setPhotos] = useState<Photo[]>([])
   const [voice, setVoice] = useState<(VoiceNote & { evidence?: Evidence; status: 'uploading' | 'done' | 'error' }) | null>(null)
   const [description, setDescription] = useState('')
+  /** A translation the reporter chose to file. It is sent only while the description still matches it. */
+  const [translation, setTranslation] = useState<TranslationRecord | null>(null)
 
   const [draft, setDraft] = useState<Classification | null>(null)
   const [drafting, setDrafting] = useState(false)
@@ -193,6 +196,7 @@ export default function ReportNew() {
         ai_analysis: suggestion,
         user_confirmed: !!suggestion && suggestion.subcategory === subcategory,
         duplicate_of: duplicateOf,
+        translation: translation && translation.original === description ? translation : null,
       })
       announce('Report submitted')
       nav(`/reports/${r.id}?new=1`)
@@ -310,8 +314,22 @@ export default function ReportNew() {
             </section>
 
             <Field label="Description" hint="What’s blocking access, and who it affects. Mention the exact spot if the pin can’t show it.">
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={4000} rows={5} />
+              <Textarea
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                setTranslation(null)
+              }}
+              maxLength={4000}
+              rows={5}
+            />
             </Field>
+            {description.trim() && (
+              <TranslatePanel text={description} onUse={(t, record) => {
+                setDescription(t)
+                setTranslation(record)
+              }} />
+            )}
             {!hasContent && <p className="text-sm text-muted">Add a description, photo or voice note to continue.</p>}
 
             <div className="flex flex-col gap-1">

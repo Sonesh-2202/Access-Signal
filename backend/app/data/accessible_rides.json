@@ -1,0 +1,23 @@
+{
+  "_about": "Curated wheelchair-accessible ride options for the New York City area. The app never books through these services. It shows the phone number or link and a draft message the person can copy or have read aloud. Check each number against its source before a release; entries with a broken or missing source are removed.",
+  "rides": [
+    {
+      "id": "aar",
+      "name": "Access-A-Ride (MTA paratransit)",
+      "kind": "paratransit",
+      "phone": "877-337-2017",
+      "url": "https://www.mta.info/accessibility/access-a-ride",
+      "notes": "Pre-approved paratransit. Trips are booked by phone, 7 a.m. to 5 p.m., seven days a week. Callers outside the New York metro area dial 718-393-4999.",
+      "source_url": "https://www.mta.info/accessibility/access-a-ride/book-and-manage-trips"
+    },
+    {
+      "id": "accessible-dispatch",
+      "name": "NYC Accessible Dispatch (wheelchair-accessible taxis)",
+      "kind": "taxi",
+      "phone": "646-599-9999",
+      "url": "https://www.nyc.gov/site/tlc/passengers/find-an-accessible-ride.page",
+      "notes": "Call to request an accessible yellow or green taxi from the e-hail companies. Dial 711 for relay service.",
+      "source_url": "https://www.nyc.gov/site/tlc/passengers/find-an-accessible-ride.page"
+    }
+  ]
+}

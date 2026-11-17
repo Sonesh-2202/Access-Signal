@@ -14,7 +14,8 @@ def plan_route(body: RouteRequest, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Routing graph not loaded. Run: python -m scripts.seed_demo")
     try:
-        return Router(db).route(body.origin, body.destination, body.profile, body.avoid_unknown, body.alternatives)
+        return Router(db).route(body.origin, body.destination, body.profile, body.avoid_unknown, body.alternatives,
+                                prefer_reliable=body.prefer_reliable)
     except RoutingError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
 

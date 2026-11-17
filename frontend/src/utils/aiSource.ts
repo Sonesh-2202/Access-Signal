@@ -24,6 +24,10 @@ export function aiSourceShort(source: AISource | undefined): string {
 /** Shown under the assistant's answers. */
 export const chatPrivacyNote = 'Answers come from a cloud model and are grounded in the data on this page.'
 
+/** Shown with a planned route: the router computes the path, the AI only reads the request and explains it. */
+export const routeSourceNote =
+  'Route calculated by AccessSignal’s router from OpenStreetMap paths and open reports. The AI only reads your request and explains the result.'
+
 /** Plain-language note on where report evidence goes when a suggestion is requested. */
 export function aiPrivacyNote(status: AIStatus | undefined, usingOwnKey: boolean): string {
   if (usingOwnKey) {

@@ -5,6 +5,7 @@ import { Button, ButtonLink } from '@/components/common/Button'
 import { Icon } from '@/components/common/Icon'
 import { Skeleton } from '@/components/common/Skeleton'
 import { AskButton } from '@/components/assistant/AskButton'
+import { PreflightCard } from '@/components/places/PreflightCard'
 import { Container, ErrorNote } from '@/components/layout/Layout'
 import { placeType } from '@/components/places/PlaceBits'
 import { ReportRow } from '@/components/reports/ReportRow'
@@ -70,6 +71,7 @@ export default function PlaceProfile() {
           <AskButton context={{ kind: 'place', id: p.id }} label={p.name}>Ask about this place</AskButton>
         </div>
       </header>
+      <PreflightCard placeId={p.id} />
 
       {open.length > 0 && (
         <div role="note" className="mt-3 border-l-2 border-signal bg-signal-wash px-2 py-1">
