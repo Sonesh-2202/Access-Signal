@@ -35,8 +35,11 @@ function parsePt(s: string | null): Pt | null {
 
 const PROFILES: { value: Profile; label: string; hint: string }[] = [
   { value: 'wheelchair', label: 'Wheelchair', hint: 'No stairs or raised kerbs. Avoids steep slopes, rough surfaces and reported blockages.' },
+  { value: 'power_wheelchair', label: 'Power wheelchair', hint: 'No stairs or raised kerbs. Tolerates steeper slopes than manual, but needs wider paths.' },
   { value: 'reduced_effort', label: 'Reduced effort', hint: 'Prefers flat, smooth paths. Stairs allowed but costly.' },
   { value: 'low_vision', label: 'Low vision', hint: 'Prefers crossings with audible signals and tactile paving, and lit paths.' },
+  { value: 'mobility_aid', label: 'Mobility aid', hint: 'For cane, walker or limited stamina. Avoids rough surfaces and steep slopes. Slower pace.' },
+  { value: 'stroller', label: 'Stroller / luggage', hint: 'Step-free preferred. Curb cuts and smooth surfaces. Stairs very costly but passable.' },
   { value: 'standard', label: 'Walking', hint: 'Shortest path. Reported barriers count only slightly.' },
 ]
 

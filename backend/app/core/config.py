@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # CORS. Origins only (scheme://host[:port]); paths and trailing slashes are dropped.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Redis (opt-in). Set REDIS_URL to enable distributed rate limiting
+    # across multiple workers / containers.  Example: redis://localhost:6379/0
+    redis_url: str | None = None
+
     # Number of reverse proxies in front of the app that append to X-Forwarded-For.
     # 0 uses the socket peer address. Set to the platform's hop count when hosted.
     trusted_proxy_hops: int = 0

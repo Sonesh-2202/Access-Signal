@@ -459,7 +459,7 @@ class Router:
         inc, name = r["_steepest"]
         if inc >= 0.04:
             out.append(f"Steepest section about {inc:.0%} on {name}.")
-        if profile == "wheelchair" and index == 0:
+        if profile in ("wheelchair", "power_wheelchair") and index == 0:
             out.append("No stairs or raised kerbs mapped on this route.")
         r.pop("_barrier_ids", None)
         r.pop("_steepest", None)

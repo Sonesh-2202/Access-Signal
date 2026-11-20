@@ -15,7 +15,7 @@ Community-reported accessibility conditions for Midtown and Lower Manhattan, che
 ![MapLibre](https://img.shields.io/badge/MapLibre_GL-5-1C1B19?style=flat-square&logo=maplibre&logoColor=F4F1EA)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-1C1B19?style=flat-square&logo=fastapi&logoColor=F4F1EA)
 ![PostGIS](https://img.shields.io/badge/PostgreSQL-PostGIS-1C1B19?style=flat-square&logo=postgresql&logoColor=F4F1EA)
-![Tests](https://img.shields.io/badge/tests-178_passing-A8360F?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-187_passing-A8360F?style=flat-square)
 ![Cost](https://img.shields.io/badge/running_cost-%240-A8360F?style=flat-square)
 ![License](https://img.shields.io/badge/code-MIT-1C1B19?style=flat-square)
 ![Data](https://img.shields.io/badge/data-OpenStreetMap_ODbL-1C1B19?style=flat-square)
@@ -49,7 +49,7 @@ Every open barrier on one map, sized and outlined by severity so the level reads
 <td width="50%" valign="top">
 
 ### Routes that avoid barriers
-Four travel profiles: wheelchair, reduced effort, low vision and walking. Each route explains what it avoids and what it costs, for example *"Avoids 1 reported barrier … 170 m longer (+36%)"*.
+Seven travel profiles: manual wheelchair, power wheelchair, reduced effort, low vision, mobility aid, stroller/luggage, and standard walking. Each route explains what it avoids and what it costs, for example *"Avoids 1 reported barrier … 170 m longer (+36%)"*.
 
 </td>
 </tr>
@@ -246,7 +246,7 @@ Then open http://localhost:3000. The Postgres path (Alembic migrations and seedi
 
 | Suite | Count | Command | Covers |
 |---|---:|---|---|
-| Backend | 185 | `pytest` | Alerts near me (distance matching, opt-in location, 24-hour expiry, dedupe, mocked push with no personal text), saved-route alerts, corridor risk (Hypothesis bounds), route description (schema checks, no writes, offline message), translation, rides and preflight (rules), API flows, issue state machine, evidence privacy, cloud providers and keyword fallback against a fake OpenAI server, BYOK, CORS, deploy config |
+| Backend | 187 | `pytest` | Alerts near me (distance matching, opt-in location, 24-hour expiry, dedupe, mocked push with no personal text), saved-route alerts, corridor risk (Hypothesis bounds), 7 travel profiles, Redis/in-memory rate limiters, route description (schema checks, no writes, offline message), translation, rides and preflight (rules), API flows, issue state machine, evidence privacy, cloud providers and keyword fallback against a fake OpenAI server, BYOK, CORS, deploy config |
 | Frontend unit | 86 | `npm test` | Nearby card and alerts settings (permission states, one location read per press, no loops), inbox filters, route description, reliable-route breakdown, rides, preflight, translation, form controls, password rules, legal pages, route guards, demo dataset, cold-start banner, BYOK key handling, axe checks |
 | End-to-end | 31 | `npm run test:e2e` | Filing a report, manager workflow, route avoidance, axe on 9 pages, overflow at desktop, mobile and 390 px. Point `E2E_BASE_URL` at the live site to run it there |
 

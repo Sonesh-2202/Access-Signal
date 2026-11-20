@@ -4,7 +4,7 @@ from hypothesis import strategies as st
 from app.services.routing.costs import Barrier, apply_barriers, base_cost
 from tests.conftest import GRID_LAT, GRID_LNG, STEP, grid_edges
 
-PROFILES = ["wheelchair", "reduced_effort", "low_vision", "standard"]
+PROFILES = ["wheelchair", "power_wheelchair", "reduced_effort", "low_vision", "mobility_aid", "stroller", "standard"]
 
 attrs_strategy = st.fixed_dictionaries({
     "highway": st.sampled_from(["footway", "residential", "steps", "pedestrian", "primary"]),
@@ -100,3 +100,32 @@ def test_route_avoids_reported_barrier(client, grid, user_headers):
 def test_route_outside_network(client, grid):
     r = _route(client, [40.7600, -73.9700], [GRID_LAT, GRID_LNG])
     assert r.status_code == 422
+
+
+def test_new_profiles_cost_rules():
+    # Power wheelchair: stairs and raised kerbs are impassable
+    assert base_cost(10, {"highway": "steps", "has_steps": True}, "power_wheelchair").cost is None
+    assert base_cost(10, {"highway": "footway", "kerb": "raised"}, "power_wheelchair").cost is None
+    # Power wheelchair tolerates steeper incline better than manual wheelchair
+    pw_cost = base_cost(10, {"highway": "footway", "incline": 0.09}, "power_wheelchair").cost
+    wc_cost = base_cost(10, {"highway": "footway", "incline": 0.09}, "wheelchair").cost
+    assert pw_cost < wc_cost
+
+    # Stroller: stairs are passable but penalised 4x
+    stroller_stairs = base_cost(10, {"highway": "steps", "has_steps": True}, "stroller").cost
+    assert stroller_stairs == 40.0
+
+    # Mobility aid: slower, penalises rough surfaces and unlit paths
+    ma_rough = base_cost(10, {"highway": "footway", "surface": "cobblestone"}, "mobility_aid").cost
+    assert ma_rough == 30.0
+
+
+def test_ratelimit_factory():
+    from app.core.ratelimit import create_limiter, _InMemorySlidingWindowLimiter
+    limiter = create_limiter(limit=10, window_seconds=60)
+    assert limiter is not None
+    # Default without REDIS_URL returns in-memory limiter
+    assert isinstance(limiter, _InMemorySlidingWindowLimiter)
+    limiter.check("test-key")
+    limiter.reset()
+

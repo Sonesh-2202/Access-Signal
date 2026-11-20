@@ -217,7 +217,8 @@ class PlaceDetail(PlaceSummary):
 
 # ---------------------------------------------------------------- routing
 
-Profile = Literal["wheelchair", "reduced_effort", "low_vision", "standard"]
+Profile = Literal["wheelchair", "reduced_effort", "low_vision", "standard",
+                  "power_wheelchair", "stroller", "mobility_aid"]
 
 
 class RouteRequest(BaseModel):

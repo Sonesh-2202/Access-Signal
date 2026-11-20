@@ -55,8 +55,11 @@ export const ISSUE_STATUS_LABEL: Record<string, string> = {
 
 export const PROFILE_LABEL: Record<string, string> = {
   wheelchair: 'Wheelchair',
+  power_wheelchair: 'Power wheelchair',
   reduced_effort: 'Reduced effort',
   low_vision: 'Low vision',
+  mobility_aid: 'Mobility aid',
+  stroller: 'Stroller / luggage',
   standard: 'Standard walking',
 }
 

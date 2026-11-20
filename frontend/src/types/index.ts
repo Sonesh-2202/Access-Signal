@@ -231,7 +231,7 @@ export interface PlaceDetail extends PlaceSummary {
   timeline: TimelineEntry[]
 }
 
-export type Profile = 'wheelchair' | 'reduced_effort' | 'low_vision' | 'standard'
+export type Profile = 'wheelchair' | 'power_wheelchair' | 'reduced_effort' | 'low_vision' | 'mobility_aid' | 'stroller' | 'standard'
 
 export interface RouteSegment {
   name: string

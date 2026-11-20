@@ -415,7 +415,15 @@ export interface RouteBarrier {
   confidence: number
 }
 
-const SPEED: Record<Profile, number> = { wheelchair: 62, reduced_effort: 55, low_vision: 66, standard: 80 } // m/min
+const SPEED: Record<Profile, number> = {
+  wheelchair: 62,
+  power_wheelchair: 70,
+  reduced_effort: 55,
+  low_vision: 66,
+  mobility_aid: 45,
+  stroller: 65,
+  standard: 80,
+} // m/min
 
 function compass(from: V, to: V): string {
   // Bearing in true degrees, from grid vector.

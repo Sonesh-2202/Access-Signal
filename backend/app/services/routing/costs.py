@@ -10,7 +10,8 @@ ROUGH_SURFACES = {"cobblestone", "sett", "unhewn_cobblestone", "gravel", "fine_g
 PAVED_STREETS = {"residential", "tertiary", "secondary", "primary", "unclassified", "living_street"}
 BAD_SMOOTHNESS = {"bad", "very_bad", "horrible", "very_horrible", "impassable"}
 
-SPEED_M_PER_MIN = {"wheelchair": 60.0, "reduced_effort": 50.0, "low_vision": 60.0, "standard": 80.0}
+SPEED_M_PER_MIN = {"wheelchair": 60.0, "reduced_effort": 50.0, "low_vision": 60.0, "standard": 80.0,
+                   "power_wheelchair": 70.0, "stroller": 65.0, "mobility_aid": 45.0}
 
 
 @dataclass
@@ -45,7 +46,7 @@ def unknown_attributes(attrs: dict, profile: str) -> list[str]:
     if hw not in PAVED_STREETS and hw != "steps" and not attrs.get("surface"):
         missing.append("surface")
     crossing = is_crossing(attrs)
-    if crossing and profile in ("wheelchair", "reduced_effort") and not attrs.get("kerb"):
+    if crossing and profile in ("wheelchair", "reduced_effort", "power_wheelchair", "stroller", "mobility_aid") and not attrs.get("kerb"):
         missing.append("kerb")
     if crossing and profile == "low_vision":
         if not attrs.get("tactile_paving"):
@@ -110,6 +111,72 @@ def base_cost(length: float, attrs: dict, profile: str) -> EdgeCost:
         if attrs.get("lit") == "no":
             f *= 1.3
             why.append("unlit")
+    elif profile == "power_wheelchair":
+        if steps and attrs.get("ramp_wheelchair") != "yes":
+            return EdgeCost(None, ["stairs"])
+        if kerb in ("raised", "yes"):
+            return EdgeCost(None, ["raised kerb"])
+        if attrs.get("wheelchair") == "no":
+            return EdgeCost(None, ["tagged not wheelchair accessible"])
+        if incline is not None:
+            if incline > 0.12:
+                f *= 6.0
+                why.append(f"very steep ({incline:.0%})")
+            elif incline > 0.10:
+                f *= 3.0
+                why.append(f"steep ({incline:.0%})")
+            elif incline > 0.08:
+                f *= 1.5
+                why.append(f"moderate slope ({incline:.0%})")
+        if rough:
+            f *= 2.0
+            why.append(f"rough surface ({surface or attrs.get('smoothness')})")
+        if kerb == "rolled":
+            f *= 1.1
+        width = attrs.get("width")
+        if width is not None:
+            try:
+                w = float(width)
+                if w < 1.2:
+                    f *= 5.0
+                    why.append("narrow path")
+            except (ValueError, TypeError):
+                pass
+    elif profile == "stroller":
+        if steps:
+            f *= 4.0
+            why.append("stairs")
+        if kerb in ("raised", "yes"):
+            f *= 3.0
+            why.append("raised kerb")
+        if incline is not None and incline > 0.10:
+            f *= 3.0
+            why.append(f"steep ({incline:.0%})")
+        elif incline is not None and incline > 0.05:
+            f *= 1.5
+            why.append(f"moderate slope ({incline:.0%})")
+        if rough:
+            f *= 2.5
+            why.append("rough surface")
+        if kerb == "rolled":
+            f *= 1.2
+    elif profile == "mobility_aid":
+        if steps:
+            f *= 4.0
+            why.append("stairs")
+        if incline is not None:
+            if incline > 0.08:
+                f *= 3.0
+                why.append(f"steep ({incline:.0%})")
+            elif incline > 0.03:
+                f *= 1.0 + incline * 20
+                why.append(f"slope ({incline:.0%})")
+        if rough:
+            f *= 3.0
+            why.append("rough surface")
+        if attrs.get("lit") == "no":
+            f *= 1.4
+            why.append("unlit")
     else:  # standard
         if steps:
             f *= 1.1
@@ -124,7 +191,7 @@ def apply_barriers(ec: EdgeCost, length: float, barriers: list[Barrier], profile
     why = list(ec.factors)
     for b in barriers:
         weight = b.severity * (0.4 + 0.6 * b.confidence)
-        if profile == "wheelchair" and b.blocks_wheelchair and b.severity >= 0.75 and b.confidence >= 0.35:
+        if profile in ("wheelchair", "power_wheelchair") and b.blocks_wheelchair and b.severity >= 0.75 and b.confidence >= 0.35:
             return EdgeCost(None, why + [f"reported barrier: {b.label}"], ec.unknown)
         if profile == "standard":
             cost += length * 0.2 * weight
